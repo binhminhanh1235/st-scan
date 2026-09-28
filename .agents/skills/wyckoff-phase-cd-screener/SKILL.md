@@ -1,105 +1,124 @@
 ---
 name: wyckoff-phase-cd-screener
 description: >-
-  Tự động quét và nhận diện các cơ hội giải ngân rủi ro cực thấp theo phương pháp Wyckoff (V7.0)
-  tại Pha C (Test of Spring / Terminal Shakeout) và Pha D (BU / LPS - Last Point of Support).
-  Tích hợp kiểm định Stationarity hộp TR, chống nhiễu Minor SOS (%CP >= 66%), gắn cờ Regime Counter-Trend,
-  chiết khấu Target 2 theo Supply Zone và kế hoạch giải ngân đa tầng (Tranche Scaling 2 giai đoạn).
+  Hệ thống Wyckoff x Flow Expectancy (WFE V3.4): Tự động quét và xếp hạng các cơ hội giải ngân
+  rủi ro cực thấp theo kỳ vọng toán học (EV) và xác suất p_success tại Pha C (Test of Spring)
+  và Pha D (BU / LPS). Tích hợp ba Engine độc lập tuyệt đối (Flow, Structure, Volume),
+  Stationarity 3 khung với Boundary-Roll Guard, Cổng kích hoạt Activation Gate, Target Validity & Level Promotion,
+  Trigger-Stop Audit ({L, ATR, buffer, stop, pass}), Single Source of Truth for Stops,
+  Stop Sanity Band & Stop Monotonicity với Monotonic Inputs Audit, Structure Snapshot & Degenerate Level Rule,
+  Portfolio Layer (trần 25% NAV/mã, tổng <= 100%), Output Liquidity Exit Cap (max 20% ADTV20),
+  Foreign Flow Governance (display-only flags), Drop-out Manifest và ràng buộc cứng risk cap p99 <= 6.5% NAV.
   Triggers: "quét pha c d", "wyckoff pha c", "wyckoff pha d", "tìm điểm mua lps", "test spring",
-  "kèo pha c", "kèo lps", "wyckoff phase c d", "điểm mua đón lõng".
+  "kèo pha c", "kèo lps", "wyckoff phase c d", "điểm mua đón lõng", "wfe v3", "wyckoff flow expectancy".
 ---
 
-# Kỹ Năng Quét Điểm Mua Wyckoff Pha C & D (Wyckoff Phase C/D Screener V7.0)
+# Hệ Thống Wyckoff × Flow Expectancy V3.4 (WFE System)
 
-Kỹ năng này chuyên biệt hóa việc tìm kiếm và phân loại các cơ hội giải ngân **Đón Lõng (Anticipatory Quantitative Model)** rủi ro thấp nhất theo phương pháp Wyckoff nguyên bản, chuyển đổi từ "dự báo danh nghĩa" sang "dự báo có kiểm soát rủi ro" qua quản lý trạng thái, chiết khấu mục tiêu và giải ngân đa tầng.
-
----
-
-## 1. 5 Trụ Cột Định Lượng Thực Chiến (Quantitative Pillars V7.0)
-
-### 1. Bộ lọc Thanh khoản Dòng Vốn Lớn (ADTV Filter)
-* **Giá trị Giao dịch Trung bình 20 phiên:**
-  $$ADTV_{20} = \frac{SMA20_{\text{Volume}} \times \text{Price}_{\text{VND}}}{10^6} \ge 15.0 \text{ tỷ VNĐ/phiên}$$
-* Khối lượng tối thiểu $SMA20_{\text{Vol}} \ge 200,000$ cp/phiên. Loại bỏ hoàn toàn nguy cơ trượt giá (slippage).
-
-### 2. Bản vá 1: Chống nhiễu Minor SOS & Gắn cờ Regime (Counter-trend)
-* **Siết điều kiện Minor SOS (Pha D):** Nến bứt phá qua $TR\_Mid$ với $RVol \ge 1.25$ phải có giá đóng cửa nằm ở $1/3$ trên biên độ:
-  $$\frac{Close - Low}{High - Low} \ge 0.66 \quad (\%CP \ge 66\%)$$
-  Loại bỏ triệt để nến râu trên dài (Shooting Star / Upthrust giả mạo).
-* **Gắn cờ Regime (Xu hướng đỉnh lớn):**
-  $$Peak_{Old} = \max(High_{-120:-60}), \quad Peak_{New} = \max(High_{-60:-20})$$
-  Nếu $Peak_{New} < Peak_{Old} \times 0.95 \rightarrow$ Thị trường đang trong xu hướng giảm (Lower Highs).
-  * Gắn tag `[Counter-Trend]` vào `setup_type`.
-  * Điều chỉnh `position_sizing`: **Giảm 50% quy mô (Half-size)**. Ngược lại là **Full-size**.
-
-### 3. Bản vá 2: Đóng băng Snapshot Hộp TR (Kiểm định Stationarity 3 Khung)
-* Tính $TR\_High$ trên 3 rolling windows:
-  * $TR_{Primary}: [-90:-20]$
-  * $TR_{Shift1}: [-100:-25]$
-  * $TR_{Shift2}: [-80:-15]$
-* Nếu $TR\_High$ của $TR_{Primary}$ lệch quá $5\%$ so với $TR_{Shift1}$ hoặc $TR_{Shift2} \rightarrow$ Kích hoạt `is_box_unstable = True`:
-  * Gắn tag `[Box Unstable]` vào `setup_type`.
-  * **Cấm in Target 2 dài hạn:** Gán $Target_2 = \text{None}$, $Reward_{2\%} = \text{None}$, $RR_2 = \text{None}$.
-
-### 4. Bản vá 3: Chiết khấu Target 2 theo Kháng cự Vùng Cung (Supply Zone)
-* Xác định Vùng Cung lớn nhất lịch sử 130 phiên: $Major\_Supply = \max(High_{-130:-1})$.
-* $Target_{2\_Raw} = TR\_High + (TR\_High - TR\_Low) \times 0.5$.
-* Nếu $Target_{2\_Raw} \ge Major\_Supply \times 0.97 \rightarrow$ Ép lùi mục tiêu về sát dưới Vùng Cung:
-  $$Target_2 = \text{round}(Major\_Supply \times 0.98, 2)$$
-  Kèm ghi chú `target_2_note = "Bị giới hạn bởi Supply Zone cũ"`.
-
-### 5. Bản vá 4: Cấu trúc Giải ngân Đa tầng (Tranche Scaling 2 Giai đoạn)
-* **Tranche 1 (Thăm dò Anticipatory):** Mua tại $Price_{current}$ với Stop Loss động theo ATR ($0.8 \times ATR_{14}$).
-* **Tranche 2 (Gia tăng Confirmatory):** Kích hoạt khi giá đóng cửa vượt $TR\_High$ (Pha D) hoặc $TR\_Mid$ (Pha C). Stop Loss toàn bộ vị thế dời lên $TR\_Mid$ (Pha D) hoặc $event\_low$ (Pha C).
+Hệ thống **WFE V3.4** thực thi kiến trúc định lượng tổ chức kết hợp phương pháp Wyckoff kinh điển với phân tích dòng tiền Flow Engine và kiểm định nến Volume Engine (VPA), đưa ra quyết định giải ngân dựa trên **kỳ vọng toán học (Expectancy - EV)**, kiểm soát chặt chẽ **hiệu lực mức giá (Level Validity)**, **cổng kích hoạt (Activation Gate)**, **kiểm định dừng lỗ nghiêm ngặt (Trigger-Stop Audit)**, **chống trôi hộp ranh giới (Boundary-Roll Guard)**, **chân lý dừng lỗ duy nhất (Single Source of Truth for Stops)**, **ảnh chụp cấu trúc & xử lý mức suy biến (Structure Snapshot & Degenerate Level Rule)**, **lớp danh mục & trần thoát thanh khoản (Portfolio & Liquidity Layer)** và **ràng buộc cứng rủi ro (Hard Risk Cap)**.
 
 ---
 
-## 2. Quy Tắc Bắt Buộc Dành Cho AI Agent (LLM Rules)
+## 1. Hiến Pháp Kiến Trúc (Architecture Contract V3.4)
+
+1. **Ba Engine Độc Lập Tuyệt Đối:**
+   - **Flow Engine (Timing Radar):** radar dẫn (`flow_accum`, `flow_dist`) và radar trễ (`flow_trend` với RSI 50 Wilder, cap, cờ `trend_collapse_warning`). Dòng vốn ngoại tệ/khối ngoại chỉ đóng vai trò cờ hiển thị định tính (`flag: [FOREIGN_NET_SELL]` / `[FUND_OUTFLOW]`), không làm sai lệch tính toán định lượng dòng tiền nội bộ.
+   - **Structure Engine (Bản đồ & Mức giá):** kiểm tra stationarity hộp TR trên 3 rolling windows (`[-90:-20]`, `[-100:-25]`, `[-80:-15]`), **Boundary-Roll Guard** (phát hiện đỉnh/đáy trôi khỏi cửa sổ gây méo mó biên hộp), freeze box snapshot, quantitative events (Spring, Test, Minor SOS, SOS, BU/LPS, UT/UTAD, SOW), các mốc giá T1 & T2, xác suất pha A–E.
+   - **Volume Engine (Kính hiển vi VPA):** $RVol = vol/prev\_sma20$ (loại limit day và ex-date), Close Position ($CP$, Doji = 0.5), cờ cạn vol (`dry_up`), hấp thụ (`absorption`), kiệt sức (`exhaustion`), điểm chất lượng sự kiện (`event_quality`).
+2. **Điểm Gặp Duy Nhất — Tầng Policy (V3.4):**
+   - Policy không nhận nhãn văn xuôi, chỉ nhận **feature số** từ 3 engine.
+   - Ra quyết định dựa trên mô hình Expectancy tuyến tính chuẩn hóa $\rightarrow$ Platt scaling $\rightarrow p\_success$ và tra bảng phân vị $EV$ ($R$ trung bình).
+   - **Activation Gate:** Phân loại rạch ròi 2 khối:
+     - `ACTIONABLE`: Setup {TEST_SPRING_PHASE_C, BU_LPS_PHASE_D} đã kích hoạt AND `T1_valid` AND `p99_risk <= 6.5%`.
+     - `WATCHLIST`: Setup chưa kích hoạt, hoặc T1 không hợp lệ, hoặc p99 không đạt $\rightarrow$ Sizing triệt để = 0%, KHÔNG xuất tranche plan giải ngân.
+3. **Hiệu Lực Mức Giá, Level Promotion & Degenerate Level Resolution:**
+   - $T1_{valid} = (T1 \text{ is not None}) \land (T1 > p_{cur} \times 1.00)$.
+   - Nếu $T1 \le p_{cur}$: Tìm ứng viên đôn mức $candidates = [T2, Major\_Supply \times 0.98, pivot > p_{cur} \times 1.02]$. Nếu có $\rightarrow$ $T1 = \min(candidates)$, ghi rõ nguồn ứng viên đôn mức, tag `[TARGET_PROMOTED]`; ngược lại gán `T1=None`, tag `[TARGET_EXHAUSTED]`.
+   - **Luật Ca Suy Biến (Degenerate Level Resolution):** Nếu $|T1 - TR\_High| \le 0.5 \times ATR_{14}$ (mục tiêu T1 trùng đỉnh hộp), Tranche T1 nhắm vào cản $TR\_High$, còn Tranche T2 bắt buộc đặt điều kiện bứt phá xác nhận:
+     $$T2\_trigger = \max(TR\_High \times 1.02, T1 \times 1.02)$$
+4. **Trigger-Stop Audit & Single Source of Truth for Stops:**
+   - **R1 Trigger-Stop Audit Line:** Tại Pha C (Test of Spring) hoặc Pha D (đáy LPS), mức cắt lỗ thực thi bắt buộc nằm **dưới** `Event_Low` hoặc đáy LPS ít nhất $0.5 \times ATR_{14}$ của phiên hiện tại (cấm dùng ATR cũ):
+     $$SL \le Event\_Low - 0.5 \times ATR_{14}$$
+     Bắt buộc xuất dòng kiểm toán trong trace:
+     `Trigger-Stop Audit: {'L': ..., 'ATR14_current': ..., 'buffer_pct': ...%, 'stop': ..., 'upper_bound': ..., 'pass': True}`
+   - **R2 Boundary-Roll & Stationarity Trace:** In chi tiết mức $TR\_High / TR\_Low$ trên cả 3 cửa sổ:
+     `Stationarity Trace: W_primary=[-90:-20] ..., W_shift1=[-100:-25] ..., W_shift2=[-80:-15] ... -> max_drift=...% -> flag: [BOX_UNSTABLE], T2=None`
+     Nếu `max_drift > 5.0%` $\rightarrow$ nổ cờ `[BOX_UNSTABLE]` và ép cứng $T2 = None$.
+   - **Q2 Single Source of Truth for Stops:** Toàn bộ hệ thống (`scanner.py`, `policy_engine.py`, báo cáo L5) dùng chung một nguồn Stop duy nhất lấy từ Tranche Plan của tranche điều hành. Tiêu đề SL1, bảng Operative SL, tranche stop_loss và trace Operative Stops trùng khớp 100% cho tranche điều hành.
+   - **Q3 Stop Monotonicity & Inputs Audit:** $T2\_SL \ge T1\_SL \ge T0\_SL$. Pha D chỉ in slot T1 và T2 (không in slot T0 thừa).
+5. **Lớp Danh Mục, Trần Thoát Thanh Khoản & Sizing Trace (Portfolio Layer):**
+   - **Trần tập trung:** $size_i \le \min(size_i, 25\% \text{ NAV/mã}, 30\% \text{ NAV/ngành})$.
+   - **Trần ngân sách danh mục:** $\sum_{i} approved\_size_i \le 100\%$ NAV.
+   - **Output Liquidity Exit Cap:** $size_i \times NAV_{ref} \le 0.20 \times ADTV20_i$ ($NAV_{ref} = 15$ tỷ VNĐ). Bắt buộc in ADTV20 cho mọi mã ACTIONABLE.
+   - **R4 Sizing Trace:** In rõ bậc thang sizing và luật đặc thù (`Phase C Probe Rule: base_size capped at 30% overrides trend tier 75%`).
+   - **Cap Loop Audit Trace:** In đầy đủ chuỗi 4 cấp: `raw_size -> p99_capped -> portfolio_capped -> liquidity_capped -> final_size`.
+6. **R5 Drop-out Manifest:** Mọi mã từng xuất hiện ở báo cáo trước nhưng vắng mặt ở báo cáo này phải được kê khai 1 dòng lý do rõ ràng.
+
+---
+
+## 2. Quy Tắc Bắt Buộc Dành Cho AI Agent (LLM Governance Rules)
 
 > [!CRITICAL]
-> 1. **Luật Báo cáo Target 2:** Nếu biến `target_2` trả về `null` hoặc cờ `[Box Unstable]` xuất hiện, AI **tuyệt đối KHÔNG ĐƯỢC tự bịa ra Target 2 hoặc tự tính R:R2**. Bắt buộc ghi rõ: *"Hộp tích lũy không ổn định, hủy bỏ mục tiêu sóng dài"*.
-> 2. **Luật Cảnh báo Chế độ (Regime):** Nếu có cờ `[Counter-Trend]`, AI **bắt buộc phải cảnh báo người dùng**: *"Mã này đang đi ngược xu hướng chính (Counter-trend), chỉ giải ngân 50% quy mô (Half-size), ưu tiên đánh ngắn chốt lời tại Target 1 và tuân thủ kỷ luật Tranche 1"*.
+> 1. **Cấm Từ Ngữ Thổi Phồng / Dự Báo:** Tuyệt đối cấm sử dụng các từ ngữ mang tính chất cảm tính hoặc bảo đảm như: *"bảo kê", "chắc thắng", "siêu cổ", "tuyệt đối"*.
+> 2. **Luật Hộp Unstable:** Nếu biến `is_box_unstable=True` hoặc `target_2` là `null`, AI **bắt buộc ghi cứng nguyên văn**: *"Hộp tích lũy không ổn định, hủy bỏ mục tiêu sóng dài"*, tuyệt đối không tự bịa ra Target 2 hay tự tính R:R2.
+> 3. **Luật Khối Structure Snapshot:** Mỗi mã ACTIONABLE bắt buộc có khối thông tin cấu trúc: `box_id, window [dates], TR_Low/Mid/High, Event_Low, frozen_at`.
+> 4. **Luật Khớp Chuẩn Nhãn Thực Thi (Execution Labeling):**
+>    - Bảng ACTIONABLE bắt buộc có: `Approved Size`, `Deployed Size`, `Pending Trigger`, `ADTV20`.
+>    - In cảnh báo bắt buộc: *"Approved Size ≠ Lệnh mua ngay; chỉ giải ngân khi thỏa trigger của từng tranche"*.
+> 5. **Map Phủ Kín Phản Bác Sang Actions:** Mọi câu trong counter-evidence phải map 1-1 vào `actions[]` (`exclude`, `downsize`, `flag`, `promote`).
+> 6. **Bắt Buộc Trích Dẫn Trace & Tính Nhất Quán:** Mọi số liệu tỷ trọng in trên bảng phải khớp tuyệt đối với `trace.final_size`. Trace phải in chuỗi cap loop 4 cấp, Trigger-Stop Audit, Stationarity Trace, Monotonic inputs audit.
+> 7. **Không Dùng Từ "Hoặc" Trong Stop:** Mỗi vị thế tranche chỉ có duy nhất 1 mức Operative Stop dứt khoát.
+> 8. **Kê Khai Drop-out Manifest:** Liệt kê các mã rơi rụng kèm lý do.
+> 9. **Disclaimer Chuẩn Hóa:** Bắt buộc có phần tuyên bố miễn trừ trách nhiệm chuẩn hóa ở cuối báo cáo.
 
 ---
 
-## 3. Quy Trình Thực Thi Chuẩn (SOP - 3 Bước)
-
-### Bước 1: Quét Lọc Định Lượng Wyckoff Pha C/D V7.0
-Gọi công cụ `scan_wyckoff_phase_c_d(min_rr=1.8, max_risk_pct=6.5, min_avg_val_bil=15.0)` từ `vnstock` MCP:
-* Tự động kiểm tra Stationarity, lọc Minor SOS chuẩn (%CP >= 66%), gắn cờ Counter-Trend và Box Unstable.
-* Nhận các trường Tranche Scaling (`tranche_1_entry`, `tranche_1_sl`, `tranche_2_trigger`, `tranche_2_sl`).
-
-### Bước 2: Thẩm định Dòng Tiền & Vị Thế Khối Ngoại
-Với các mã lọt Top:
-1. Gọi `get_market_depth_and_foreign(symbol)` để kiểm tra động thái Khối ngoại.
-2. Gọi `get_historical_candles(symbol, count=15)` để kiểm tra cấu trúc nến VPA.
-
-### Bước 3: Lập Báo Cáo Kế Hoạch Giải Ngân Đa Tầng
-Trình bày báo cáo theo đúng format chuẩn bên dưới.
-
----
-
-## 4. Mẫu Báo Cáo Đầu Ra Chuẩn (Report Template)
+## 3. Mẫu Báo Cáo Chuẩn L5 V3.4 (Report Template)
 
 ```markdown
-# Báo Cáo Cơ Hội Giao Dịch Wyckoff (Anticipatory Quantitative Model)
+# Báo Cáo Cơ Hội Giao Dịch Wyckoff × Flow Expectancy (WFE V3.4)
 
-*(Lưu ý Hệ thống: Setup này là điểm mua dự báo sớm [Anticipatory], chưa phải Pha D kinh điển. Chỉ xác nhận khi phá kháng cự, phủ định khi vi phạm SL).*
+*(Lưu ý Hệ thống: Mô hình mang tính chất heuristic định lượng và giải ngân đón lõng. Tín hiệu chưa phải xác nhận xu hướng chính thức; chỉ được xác nhận khi giá đóng cửa vượt kháng cự chủ chốt, và lập tức bị phủ định nếu vi phạm Stop Loss).*
 
-## 1. Bảng Xếp Hạng Kèo Đón Lõng (Vốn Lớn > 15 Tỷ/Phiên)
-| Mã | Trạng Thái Hộp | Setup (Gắn cờ) | Tỷ Trọng | Giá Entry | Tranche 1 SL | Target 1 | R:R_1 | Target 2 (Note) |
-| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| ... | Ổn định / Unstable | LPS [Counter-Trend] | 50% Size | ... | ... | ... | 1 : ... | ... (Limit by Supply) |
+## 1. Danh Mục Khả Thi (ACTIONABLE SETUPS)
+*(Các setup Pha C / Pha D đã kích hoạt, Target 1 hợp lệ trên giá, rủi ro p99 <= 6.5% NAV và đã qua bộ lọc Portfolio & Liquidity Layer)*
 
-## 2. Kế Hoạch Giải Ngân Đa Tầng (Tranche Scaling Plan)
-### 🎯 Mã [SYMBOL] 
-- **Bối cảnh VPA:** ...
-- **TRANCHE 1 (Thăm dò Anticipatory - 50% Vị thế):**
-  - Mua tại vùng: `[tranche_1_entry]`
-  - Cắt lỗ rủi ro hẹp (ATR): `[tranche_1_sl]`
-  - Mục tiêu ngắn (Target 1): `[target_1]`
-- **TRANCHE 2 (Gia tăng Confirmatory - 50% Vị thế còn lại):**
-  - Điều kiện kích hoạt: Đóng cửa vượt mốc `[tranche_2_trigger]`.
-  - Cắt lỗ cấu trúc (Nâng SL toàn bộ lệnh): `[tranche_2_sl]`.
-  - Mục tiêu sóng lớn (Target 2): `[target_2]` *(Bỏ qua nếu Hộp Unstable)*.
+| Mã | Setup (Gắn cờ) | p_success | Kỳ Vọng EV | Approved Size | Deployed Size | Pending Trigger | ADTV20 | Giá Hiện Tại | Operative SL | Target 1 | Target 2 (Ghi chú) |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| ... | BU/LPS | ...% | +...R | ...% NAV | 0% | Chờ xác nhận... | ... tỷ | ... | ... | ... | ... |
+
+> ⚠️ **Lưu ý thực thi:** *Approved Size ≠ Lệnh mua ngay. Vốn chỉ được giải ngân theo từng Tranche khi thỏa mãn điều kiện Pending Trigger.*
+
+## 2. Danh Mục Theo Dõi (WATCHLIST — Sizing 0% NAV)
+
+| Mã | Trạng Thái / Cờ Cảnh Báo | p_success | Giá Hiện Tại | Mức Tham Chiếu / T1 Mới | Trạng Thái Target & Nguồn Đôn Mức | Lý Do Chưa Hành Động (Actions) |
+| :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| ... | Chưa kích hoạt [Counter-Trend] | ...% | ... | ... | [TARGET_PROMOTED / EXHAUSTED] | [exclude: ...] |
+
+## 3. Chi Tiết Kế Hoạch Giải Ngân Đa Tầng & Ảnh Chụp Cấu Trúc (Chỉ Cho Nhóm ACTIONABLE)
+### 🎯 Mã [SYMBOL]
+#### 📦 Structure Snapshot
+- **Box ID:** `BOX_...` | **Cửa sổ TR:** `[T_start -> T_end]` | **Frozen at:** `YYYY-MM-DD`
+- **Mức cấu trúc:** `TR_Low = ...` \| `TR_Mid = ...` \| `TR_High = ...` \| `Event_Low = ...`
+- **Đánh giá Stationarity:** `[Trích dẫn Stationarity Trace]`
+
+#### 📊 Dữ Liệu Trace Hệ Thống
+- **Feature Row:** `...`
+- **Sizing Flow Score:** `...`
+- **Trigger-Stop Audit:** `{'L': ..., 'ATR14_current': ..., 'buffer_pct': ...%, 'stop': ..., 'upper_bound': ..., 'pass': True}`
+- **Monotonic Stops Audit:** `...`
+- **Cap Loop Audit:** `...`
+- **Risk Check:** `...`
+
+#### 🛠 Kế Hoạch Thực Thi & Phản Bác
+- **Hành động cấu trúc (Actions):** `...`
+- **Bằng chứng phản bác (Counter-evidence):** `...`
+- **Kế hoạch Tranche:**
+  - **Tranche T0 / T1:** Vùng mua, Operative Stop duy nhất, Target 1.
+  - **Tranche T2:** Điều kiện kích hoạt (áp dụng Degenerate Level Rule nếu T1 trùng TR_High), Operative Stop dời sau T2, Target 2.
+
+## 4. Bảng Theo Dõi Mã Rơi Rụng (Drop-out Manifest)
+| Mã | Trạng Thái Kỳ Trước | Lý Do Rơi Rụng Kỳ Này | Phân Loại Xử Lý |
+| :---: | :---: | :--- | :---: |
+| ... | Watchlist | ... | DROPPED |
 ```

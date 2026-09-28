@@ -5,6 +5,7 @@ Fast, free, and token-efficient market data provider for Vietnamese stocks.
 Data sources: Open endpoints from DNSE and 24hMoney (No API Key or auth required).
 """
 
+import os
 import sys
 import time
 import datetime
@@ -12,6 +13,15 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 from mcp.server.mcpserver import MCPServer
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+if "/Volumes/Data/invest" not in sys.path:
+    sys.path.insert(0, "/Volumes/Data/invest")
+
+from wfe.scanner import WFEScanner
+from wfe.radar import MCDXFlowRadar
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("vnstock")
@@ -979,5 +989,115 @@ def scan_wyckoff_phase_c_d(
     }
 
 
+@server.tool()
+def scan_wfe_v3(
+    symbols: list = None,
+    min_avg_val_bil: float = 15.0,
+    min_p_success: float = 0.45,
+    top_n: int = 10
+) -> dict:
+    """
+    Quét cơ hội giải ngân theo Đặc tả kỹ thuật & vận hành WFE V3.0 (Wyckoff x Flow Expectancy System).
+    Ba Engine độc lập (Flow, Structure, Volume) hội tụ tại tầng Policy ra quyết định theo Expectancy (EV)
+    và xác suất p_success.
+    Quản trị rủi ro đa tầng (Tranche Scaling T0/T1/T2, Dynamic ATR Stop Loss, Exit Ladder) và Output Schema chuẩn L5.
+    """
+    target_universe = [s.upper() for s in symbols] if symbols else get_dynamic_universe()
+    stock_data = _fetch_batch_candles(target_universe, days=220, resolution="1D")
+
+    scanner = WFEScanner()
+    candles_map = {}
+    for sym in target_universe:
+        d = stock_data.get(sym)
+        if not d:
+            continue
+        c = d.get("c", [])
+        o = d.get("o", [])
+        h = d.get("h", [])
+        l = d.get("l", [])
+        v = d.get("v", [])
+        t = d.get("t", [])
+        if len(c) < 70 or len(v) < 70:
+            continue
+
+        sym_candles = []
+        for i in range(len(c)):
+            dt_str = datetime.datetime.fromtimestamp(t[i]).strftime("%Y-%m-%d") if i < len(t) else f"T_{i}"
+            sym_candles.append({
+                "date": dt_str,
+                "open": o[i],
+                "high": h[i],
+                "low": l[i],
+                "close": c[i],
+                "volume": v[i]
+            })
+        candles_map[sym] = sym_candles
+
+    return scanner.scan_universe(
+        candles_by_symbol=candles_map,
+        top_n=top_n,
+        min_p_success=min_p_success,
+        min_avg_val_bil=min_avg_val_bil
+    )
+
+
+@server.tool()
+def scan_mcdx_radar(
+    mode: str = "both",
+    strength_tier: str = "strong",
+    min_adtv_billion: float = 15.0,
+    top_n: int = 20,
+    symbols: list = None
+) -> dict:
+    """
+    SKILL_9 — MCDX Flow Radar: Quét danh sách cổ phiếu theo dòng tiền tạo lập (tiêu chuẩn WFE V3.0).
+    2 chế độ:
+    - ESTABLISHED: Đã có dòng tiền tạo lập hiện diện và duy trì (thỏa E1-E4, loại spike limit-day).
+    - EMERGING: Bắt đầu có dòng tiền tham gia (G1 vào công khai HOẶC G2 gom bí mật).
+    - BOTH: Hợp nhất và gắn tag từng dòng.
+    Xếp hạng theo chỉ số Banker Intensity Index (BII 0-100).
+    """
+    target_universe = [s.upper() for s in symbols] if symbols else get_dynamic_universe()
+    stock_data = _fetch_batch_candles(target_universe, days=120, resolution="1D")
+
+    radar = MCDXFlowRadar()
+    candles_map = {}
+    for sym in target_universe:
+        d = stock_data.get(sym)
+        if not d:
+            continue
+        c = d.get("c", [])
+        o = d.get("o", [])
+        h = d.get("h", [])
+        l = d.get("l", [])
+        v = d.get("v", [])
+        t = d.get("t", [])
+        if len(c) < 70 or len(v) < 70:
+            continue
+
+        sym_candles = []
+        for i in range(len(c)):
+            dt_str = datetime.datetime.fromtimestamp(t[i]).strftime("%Y-%m-%d") if i < len(t) else f"T_{i}"
+            sym_candles.append({
+                "date": dt_str,
+                "open": o[i],
+                "high": h[i],
+                "low": l[i],
+                "close": c[i],
+                "volume": v[i]
+            })
+        candles_map[sym] = sym_candles
+
+    out = radar.scan_radar(
+        candles_by_symbol=candles_map,
+        mode=mode,
+        strength_tier=strength_tier,
+        min_adtv_billion=min_adtv_billion,
+        top_n=top_n
+    )
+    return out.to_dict()
+
+
 if __name__ == "__main__":
     server.run(transport="stdio")
+
