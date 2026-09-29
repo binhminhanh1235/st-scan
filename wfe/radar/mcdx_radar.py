@@ -136,31 +136,37 @@ class MCDXFlowRadar:
         n = len(bars)
         curr_price = bars[-1].close
 
-        # Compute Flow Engine history across recent 20 bars
-        lookback = min(20, n - 55)
-        flow_trend_hist = []
-        flow_accum_hist = []
-        flow_dist_hist = []
-        rvols = []
-
-        for i in range(n - lookback, n):
-            sub_bars = bars[:i + 1]
-            p_sma = compute_prev_sma20_vol(bars, i)
-            rv = (bars[i].volume / p_sma) if p_sma > 0 else 1.0
-            rvols.append(rv)
-
-            f_out = self.flow_engine.calculate(sub_bars)
-            flow_trend_hist.append(f_out.trend.value if f_out.trend.value is not None else 0.0)
-            flow_accum_hist.append(f_out.accum.value if f_out.accum.value is not None else 0.0)
-            flow_dist_hist.append(f_out.dist.value if f_out.dist.value is not None else 0.0)
-
         latest_f_out = self.flow_engine.calculate(bars)
         if not latest_f_out.data_ok:
             return None
 
-        curr_trend = flow_trend_hist[-1]
-        curr_accum = flow_accum_hist[-1]
-        curr_dist = flow_dist_hist[-1]
+        # Compute Flow Engine history across recent 20 bars
+        lookback = min(20, n - 55)
+        rvols = []
+        for i in range(n - lookback, n):
+            p_sma = compute_prev_sma20_vol(bars, i)
+            rv = (bars[i].volume / p_sma) if p_sma > 0 else 1.0
+            rvols.append(rv)
+
+        # Expose trend_history from FlowOutput diagnostics (avoids 21x re-calculation)
+        full_trend_hist = latest_f_out.diagnostics.get("trend_history", [])
+        if full_trend_hist and len(full_trend_hist) >= lookback:
+            flow_trend_hist = full_trend_hist[-lookback:]
+        else:
+            flow_trend_hist = full_trend_hist if full_trend_hist else [latest_f_out.trend.value or 0.0]
+
+        # Only evaluate accum for last 10 bars for slope10_accum
+        flow_accum_hist = []
+        for i in range(max(0, n - 10), n):
+            if i == n - 1:
+                flow_accum_hist.append(latest_f_out.accum.value if latest_f_out.accum.value is not None else 0.0)
+            else:
+                sub_f = self.flow_engine.calculate(bars[:i + 1])
+                flow_accum_hist.append(sub_f.accum.value if sub_f.accum.value is not None else 0.0)
+
+        curr_trend = latest_f_out.trend.value if latest_f_out.trend.value is not None else 0.0
+        curr_accum = latest_f_out.accum.value if latest_f_out.accum.value is not None else 0.0
+        curr_dist = latest_f_out.dist.value if latest_f_out.dist.value is not None else 0.0
         trend_collapse = latest_f_out.trend_collapse_warning
 
         # SMA5 RVol

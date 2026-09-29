@@ -44,6 +44,22 @@ class VolumeOutput:
     diagnostics: Dict[str, Any] = field(default_factory=dict)
 
 
+def _compute_atr14(bars: List[MarketBar]) -> float:
+    n = len(bars)
+    if n < 15:
+        return (bars[-1].high - bars[-1].low) if bars else 1.0
+    tr_list = []
+    for i in range(1, n):
+        h, l = bars[i].high, bars[i].low
+        c_prev = bars[i - 1].close
+        tr = max(h - l, abs(h - c_prev), abs(l - c_prev))
+        tr_list.append(tr)
+    curr_atr = sum(tr_list[:14]) / 14.0
+    for i in range(14, len(tr_list)):
+        curr_atr = (curr_atr * 13.0 + tr_list[i]) / 14.0
+    return curr_atr
+
+
 class VolumeEngine:
     """Volume Engine analyzes candle-level VPA metrics and event qualities."""
 
@@ -103,7 +119,13 @@ class VolumeEngine:
         # (b) Absorption: down candle, vol_ratio >= 1.2, but narrow body
         is_down = last_bar.close < (bars[-2].close if n >= 2 else last_bar.open)
         body = abs(last_bar.close - last_bar.open)
-        absorption = bool(is_down and rvol >= cfg.absorption_rvol_min and cp >= 0.40)
+        atr14 = _compute_atr14(bars)
+        absorption = bool(
+            is_down
+            and rvol >= cfg.absorption_rvol_min
+            and cp >= 0.40
+            and body <= cfg.absorption_body_max_atr * atr14
+        )
 
         # (c) Exhaustion: high vol, but low CP
         exhaustion = bool(rvol >= cfg.exhaustion_rvol_min and cp <= cfg.exhaustion_cp_max)

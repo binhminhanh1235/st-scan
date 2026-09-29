@@ -378,6 +378,7 @@ class FlowEngine:
                 "dv_contr": round(dv_contr, 3),
                 "absorb_ratio": round(absorb_ratio, 3),
                 "obv_div_pos": round(obv_div_pos, 1),
-                "obv_div_neg": round(obv_div_neg, 1)
+                "obv_div_neg": round(obv_div_neg, 1),
+                "trend_history": trend_history
             }
         )

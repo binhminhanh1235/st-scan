@@ -140,16 +140,12 @@ class WFEScanner:
                 nav_allocation_pct=policy_res.final_size_pct / 100.0,
                 num_simulations=2000
             )
-            while p99_loss_nav > self.registry.risk.max_total_risk_p99_nav and policy_res.final_size_pct > 1.0:
+            max_risk = self.registry.risk.max_total_risk_p99_nav
+            if p99_loss_nav > max_risk:
                 old_size = policy_res.final_size_pct
-                policy_res.final_size_pct = round(policy_res.final_size_pct * (self.registry.risk.max_total_risk_p99_nav / p99_loss_nav), 1)
-                policy_res.actions.append(f"downsize: p99 risk {p99_loss_nav*100:.2f}% > {self.registry.risk.max_total_risk_p99_nav*100:.1f}% -> size {old_size}% down to {policy_res.final_size_pct}%")
-                p99_loss_nav = simulate_gap_floor_risk(
-                    entry_price=curr_price,
-                    sl=sl1,
-                    nav_allocation_pct=policy_res.final_size_pct / 100.0,
-                    num_simulations=2000
-                )
+                scale = max_risk / p99_loss_nav
+                policy_res.final_size_pct = max(0.0, round(policy_res.final_size_pct * scale, 1))
+                policy_res.actions.append(f"downsize: p99 risk {p99_loss_nav*100:.2f}% > {max_risk*100:.1f}% -> size {old_size}% down to {policy_res.final_size_pct}%")
             p99_capped_size = policy_res.final_size_pct
 
             # Patch V3.2 P1: Single-stock concentration cap (max 25% NAV per stock)

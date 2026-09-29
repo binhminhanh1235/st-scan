@@ -254,7 +254,8 @@ class PolicyEngine:
                 f"'buffer_pct': {ts_audit['buffer_pct']}%, 'stop': {ts_audit['stop']}, "
                 f"'upper_bound': {ts_audit['upper_bound']}, 'pass': {ts_audit['pass']}}}"
             )
-            t1_sl = round(max(t0_sl, (levels.tr_mid or t0_sl) * 0.98), 2)
+            event_low_val = levels.event_low if levels.event_low else t0_sl
+            t1_sl = round(max(t0_sl, event_low_val), 2)
             t2_sl = round(max(t1_sl, t0_sl, levels.tr_mid if levels.tr_mid else t1_sl), 2)
             tr_mid_val = round(levels.tr_mid, 2) if levels.tr_mid else None
             trace.append(f"Monotonic Stops Audit: inputs={{'T0_SL': {t0_sl}, 'T1_SL': {t1_sl}, 'TR_Mid': {tr_mid_val}}} -> chosen_T2_SL={t2_sl} (T2_SL >= T1_SL >= T0_SL)")

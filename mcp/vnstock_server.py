@@ -286,6 +286,122 @@ def _fetch_dnse_ohlcv(symbol: str, resolution: str = "1D", count: int = 60):
     return bars[-count:]
 
 
+def compute_clean_sma20_vol(v: list, c: list, o: list, h: list, l: list, end_idx: int) -> float:
+    """Computes SMA20 volume excluding limit-ceiling/floor bars."""
+    start_idx = max(0, end_idx - 19)
+    normal_vols = []
+    for j in range(start_idx, end_idx + 1):
+        if c[j] > 0 and o and j < len(o):
+            is_ceil = (c[j] == h[j] and abs(c[j] - o[j]) / c[j] < 0.001)
+            is_floor = (c[j] == l[j] and abs(c[j] - o[j]) / c[j] < 0.001)
+            if not (is_ceil or is_floor):
+                normal_vols.append(v[j])
+    if normal_vols:
+        return sum(normal_vols) / len(normal_vols)
+    window = v[start_idx:end_idx + 1]
+    return sum(window) / len(window) if window else 1.0
+
+
+def compute_wilder_atr14(c: list, h: list, l: list) -> float:
+    """Computes Wilder's ATR 14 from lists of floats."""
+    n = len(c)
+    if n < 15:
+        return (h[-1] - l[-1]) if n > 0 else 1.0
+    tr_list = []
+    for i in range(1, n):
+        tr = max(h[i] - l[i], abs(h[i] - c[i-1]), abs(l[i] - c[i-1]))
+        tr_list.append(tr)
+    curr_atr = sum(tr_list[:14]) / 14.0
+    for i in range(14, len(tr_list)):
+        curr_atr = (curr_atr * 13.0 + tr_list[i]) / 14.0
+    return curr_atr
+
+
+def classify_vpa(
+    c: list,
+    o: list,
+    h: list,
+    l: list,
+    v: list,
+    i: int,
+    sma20_vol: float
+) -> str:
+    """Context-aware VPA classification for candle at index i."""
+    if i < 0 or i >= len(c):
+        return "Bình thường"
+
+    high = h[i]
+    low = l[i]
+    close = c[i]
+    vol = v[i]
+
+    spread = round(high - low, 2)
+    cp = round(((close - low) / spread * 100), 1) if spread > 0 else 50.0
+    rvol = round(vol / sma20_vol, 2) if sma20_vol > 0 else 1.0
+
+    # Multi-session context
+    prev_dump = False
+    prev_climax = False
+    if i >= 2:
+        prev_spread = round(h[i-1] - l[i-1], 2)
+        prev_cp = round((c[i-1] - l[i-1]) / prev_spread * 100, 1) if prev_spread > 0 else 50.0
+        prev_rvol = round(v[i-1] / sma20_vol, 2) if sma20_vol > 0 else 1.0
+        prev_dump = (c[i-1] < c[i-2] and prev_cp <= 30.0 and prev_rvol >= 1.1)
+        prev_climax = (c[i-1] > c[i-2] and prev_cp >= 75.0 and prev_rvol >= 1.5)
+
+    # 1. Grinding decline detection (BUG-4: 3 phiên giảm liên tục cạn vol)
+    if i >= 3 and (c[i] < c[i-1] < c[i-2] < c[i-3]):
+        avg_rvol_3d = sum(v[i-2:i+1]) / (3 * sma20_vol) if sma20_vol > 0 else rvol
+        if avg_rvol_3d < 0.80:
+            return "Cảnh báo: Chuỗi giảm cạn vol 3 phiên (Grinding No Demand)"
+
+    # 2. Upthrust / False Breakout at recent 20-bar high (BUG-3)
+    if cp <= 30.0 and rvol >= 1.2 and (high - close) > (close - low) * 1.5:
+        if i >= 5 and high >= max(h[max(0, i-20):i]):
+            return "Upthrust / Selling Climax"
+
+    # 3. Low volume conditions (rvol < 0.70)
+    if rvol < 0.70:
+        if prev_dump and (i >= 1 and close <= c[i-1]):
+            return "Cảnh báo: Thiếu cầu trên đà rơi (No Demand)"
+        elif prev_climax:
+            return "Tạm dừng sau tăng nóng (Inside bar)"
+        elif cp >= 35.0 and not prev_dump:
+            # Nguyên tắc Wyckoff: No Supply bắt buộc là nến Giảm hoặc Đi ngang (close <= c[i-1]).
+            # Nến tăng (close > c[i-1]) cạn vol là Low-vol Up-bar / Thiếu cầu ngắn hạn, không được dán nhãn No Supply.
+            if i >= 1 and close > c[i-1]:
+                return "Thiếu cầu / Hấp thụ cạn vol (Low-vol Test)"
+            return "No Supply chuẩn (Cạn vol giữ nền)"
+        elif cp < 35.0:
+            return "Trôi cạn vol (Thiếu cầu ngắn hạn)"
+
+    # 4. Test of Supply (Rút chân cạn cung / Hammer)
+    if cp >= 60.0 and (high - close) < (close - low) and rvol <= 1.2:
+        return "Test of Supply (Rút chân cạn cung)"
+
+    # 5. Stopping Volume / Absorption (chỉ áp dụng khi giá đang giảm hoặc đi ngang có lực đỡ)
+    if (prev_dump and cp >= 50.0) or (rvol > 1.8 and cp >= 65.0 and (i >= 1 and close <= c[i-1])):
+        return "Chớm dừng rơi (Stopping Volume / Hấp thụ)"
+
+    # 6. SOS / Bùng nổ dòng tiền
+    if rvol >= 1.3 and cp >= 65.0 and (i >= 1 and close > c[i-1]):
+        open_val = o[i] if i < len(o) else close
+        lower_shadow = min(open_val, close) - low
+        if spread > 0 and (lower_shadow / spread) >= 0.35:
+            return "Bùng nổ rút chân (Bullish Hammer SOS)"
+        return "Bùng nổ dòng tiền (SOS tiền lớn vào)"
+
+    # 7. Bearish Pressure
+    if cp <= 25.0 or (cp <= 30.0 and rvol >= 1.2):
+        return "Chịu áp lực bán ngắn hạn"
+
+    # 8. High volume divergence (Effort vs Result)
+    if rvol > 1.8 and 30.0 < cp < 65.0:
+        return "Effort vs Result Discrepancy"
+
+    return "Bình thường"
+
+
 @server.tool()
 def get_historical_candles(symbol: str, resolution: str = "1D", count: int = 60) -> list:
     """
@@ -297,11 +413,16 @@ def get_historical_candles(symbol: str, resolution: str = "1D", count: int = 60)
     """
     bars = _fetch_dnse_ohlcv(symbol, resolution, count + 20)
 
+    c_list = [b["close"] for b in bars]
+    o_list = [b["open"] for b in bars]
+    h_list = [b["high"] for b in bars]
+    l_list = [b["low"] for b in bars]
+    v_list = [b["volume"] for b in bars]
+
     enriched = []
     for i in range(len(bars)):
         bar = bars[i]
-        window = [b["volume"] for b in bars[max(0, i - 19):i + 1]]
-        sma20_vol = sum(window) / len(window) if window else bar["volume"]
+        sma20_vol = compute_clean_sma20_vol(v_list, c_list, o_list, h_list, l_list, i)
 
         high = bar["high"]
         low = bar["low"]
@@ -312,23 +433,7 @@ def get_historical_candles(symbol: str, resolution: str = "1D", count: int = 60)
         close_pos = round(((close - low) / spread * 100), 1) if spread > 0 else 50.0
         rvol = round(vol / sma20_vol, 2) if sma20_vol > 0 else 1.0
 
-        # Nhận diện VPA sơ bộ (Sử dụng Spread % tương đối thay vì hằng số tuyệt đối)
-        vpa_tag = "Normal"
-        if rvol < 0.65 and spread_pct <= 0.8:
-            vpa_tag = "No Supply / Low Vol" if close <= bar["open"] else "No Demand"
-        elif rvol > 1.8:
-            if close_pos >= 65:
-                vpa_tag = "Stopping Volume / Absorption"
-            elif close_pos <= 35:
-                vpa_tag = "Upthrust / Selling Climax"
-            else:
-                vpa_tag = "Effort vs Result Discrepancy"
-        elif close_pos >= 70 and rvol >= 1.2:
-            vpa_tag = "Bullish Progress"
-        elif close_pos <= 30 and rvol >= 1.2:
-            vpa_tag = "Bearish Pressure"
-        elif close_pos >= 60 and spread_pct >= 1.0 and (bar["open"] - low) > (high - close) * 1.5:
-            vpa_tag = "Test of Supply / Hammer"
+        vpa_tag = classify_vpa(c_list, o_list, h_list, l_list, v_list, i, sma20_vol)
 
         enriched.append({
             "date": bar["date"],
@@ -544,15 +649,35 @@ def scan_high_rr_setups(
     Tuỳ chọn: Có thể truyền danh sách 'symbols' tuỳ biến để quét danh mục riêng.
     1. Bộ lọc Thanh khoản Tuyệt đối (ADTV): Bắt buộc Giá trị giao dịch trung bình 20 phiên >= 15 tỷ VNĐ (chống trượt giá/slippage).
     2. Trend Filter & SMA50 Slope: Bắt buộc giá nằm trên hoặc giữ vững sát SMA50 và độ dốc SMA50 không cắm dốc mạnh.
-    3. Phân loại 2 Kịch bản Vào lệnh (Dual Archetype):
-       - Setup Type A: NỀN HỖ TRỢ (Range Rebound / LPS) - Mua gần đáy tích lũy, Target 1 = đỉnh đóng cửa 40 phiên, SL = Hỗ trợ - 1.0*ATR.
-       - Setup Type B: VƯỢT ĐỈNH (Breakout / VCP) - Bứt phá đỉnh 40 phiên, Target tính theo Measured Move độ sâu nền giá, SL = Pivot - 1.0*ATR.
-    4. VPA Đa phiên (Context-Aware VPA): Xét bối cảnh nến T-1 và T để phân biệt chuẩn xác No Supply với No Demand trên đà rơi.
+    3. Bộ lọc Sức mạnh Tương đối (RS Filter): Loại bỏ mã có RS_Score < -5.0% so với VNINDEX.
+    4. Phân loại 2 Kịch bản Vào lệnh (Dual Archetype):
+       - Setup Type A: NỀN HỖ TRỢ (Range Rebound / LPS) - Mua gần đáy tích lũy, Support Density, Target 1 = đỉnh đóng cửa 40 phiên, SL = Hỗ trợ - (1.0~1.2)*ATR.
+       - Setup Type B: VƯỢT ĐỈNH (Breakout / VCP) - Bứt phá đỉnh 40 phiên, lọc Upthrust/False Breakout, Target tính theo Measured Move độ sâu nền giá, SL = Pivot - 1.0*ATR.
+    5. VPA Đa phiên (Context-Aware VPA): Xét bối cảnh đa phiên để lọc bỏ tín hiệu No Demand trên đà rơi, Grinding decline, và nến Upthrust.
+    6. Xếp hạng Weighted Composite Score: Cân bằng R:R, VPA, RS Score, Support Density và ADTV.
     """
     target_universe = [s.upper() for s in symbols] if symbols else get_dynamic_universe()
 
-    # Tải dữ liệu song song đa luồng cho toàn bộ Universe (95 ngày)
-    stock_data = _fetch_batch_candles(target_universe, days=95, resolution="1D")
+    # Tải dữ liệu song song đa luồng cho toàn bộ Universe (120 ngày - margin an toàn dịp lễ Tết - BUG-6)
+    stock_data = _fetch_batch_candles(target_universe, days=120, resolution="1D")
+
+    # Lấy dữ liệu VNINDEX để tính RS Score inline (Cross-skill integration - Mục 2.A2 & 9.C)
+    d_idx = _fetch_dnse_raw("VNINDEX", "1D", 45)
+    idx_perf_5d = 0.0
+    idx_perf_20d = 0.0
+    if d_idx and len(d_idx.get("c", [])) >= 20:
+        idx_c = d_idx.get("c", [])
+        idx_perf_5d = (idx_c[-1] - idx_c[-5]) / idx_c[-5] * 100.0 if idx_c[-5] > 0 else 0.0
+        idx_perf_20d = (idx_c[-1] - idx_c[-20]) / idx_c[-20] * 100.0 if idx_c[-20] > 0 else 0.0
+
+    # Danh sách VPA tiêu cực loại bỏ setup (BUG-1)
+    BEARISH_VPA = [
+        "Cảnh báo: Thiếu cầu trên đà rơi (No Demand)",
+        "Cảnh báo: Chuỗi giảm cạn vol 3 phiên (Grinding No Demand)",
+        "Chịu áp lực bán ngắn hạn",
+        "Trôi cạn vol (Thiếu cầu ngắn hạn)",
+        "Upthrust / Selling Climax"
+    ]
 
     setups = []
     for sym in target_universe:
@@ -560,6 +685,7 @@ def scan_high_rr_setups(
         if not d:
             continue
         c = d.get("c", [])
+        o = d.get("o", [])
         h = d.get("h", [])
         l = d.get("l", [])
         v = d.get("v", [])
@@ -568,79 +694,75 @@ def scan_high_rr_setups(
 
         p_cur = c[-1]
 
-        # 1. Bộ lọc Thanh khoản Tuyệt đối (ADTV - Giá trị giao dịch trung bình 20 phiên):
-        sma20_vol = sum(v[-20:]) / 20
+        # 1. Bộ lọc Thanh khoản Tuyệt đối (ADTV - Giá trị giao dịch trung bình 20 phiên, lọc limit day BUG-5):
+        sma20_vol = compute_clean_sma20_vol(v, c, o, h, l, len(c) - 1)
         avg_val_20d_bil = round(sma20_vol * p_cur / 1e6, 2)
         if avg_val_20d_bil < min_avg_val_bil or sma20_vol < 200000:
             continue
 
         # 2. Trend Filter Nâng cao (Độ dốc & Vị thế SMA50):
-        sma50 = sum(c[-50:]) / 50
-        sma50_prev5 = sum(c[-55:-5]) / 50
-        slope_5d = round((sma50 - sma50_prev5) / sma50_prev5 * 100, 2)
+        sma50 = sum(c[-50:]) / 50.0
+        sma50_prev5 = sum(c[-55:-5]) / 50.0
+        slope_5d = round((sma50 - sma50_prev5) / sma50_prev5 * 100.0, 2)
         if slope_5d < -1.0:  # SMA50 cắm dốc mạnh xuống
             continue
         if p_cur < sma50 * 0.965:  # Nằm quá sâu dưới SMA50
             continue
 
-        # 3. Dynamic Stop Loss bằng ATR_14 (Chuẩn xác 14 phiên gồm cả phiên hiện tại):
-        tr_list = []
-        for i in range(len(c) - 14, len(c)):
-            tr = max(h[i] - l[i], abs(h[i] - c[i-1]), abs(l[i] - c[i-1]))
-            tr_list.append(tr)
-        atr14 = sum(tr_list) / 14
+        # 3. Bộ lọc Sức mạnh Tương đối (RS Filter vs VNINDEX - Mục 2.A2 & 9.C):
+        perf_5d = (c[-1] - c[-5]) / c[-5] * 100.0 if c[-5] > 0 else 0.0
+        perf_20d = (c[-1] - c[-20]) / c[-20] * 100.0 if c[-20] > 0 else 0.0
+        rs_5d = round(perf_5d - idx_perf_5d, 2)
+        rs_20d = round(perf_20d - idx_perf_20d, 2)
+        rs_score = round(rs_20d * 0.6 + rs_5d * 0.4, 2)
+        if rs_score < -5.0:  # LOẠI BỎ mã underperforming thị trường quá nhiều
+            continue
 
-        # 4. Nhận diện VPA Đa phiên (Context-Aware VPA - Tránh bẫy No Demand):
+        # 4. Dynamic Stop Loss bằng ATR_14 (Wilder Smoothing chuẩn xác - BUG-12):
+        atr14 = compute_wilder_atr14(c, h, l)
+
+        # 5. Nhận diện VPA Đa phiên (Context-Aware VPA - BUG-1, BUG-3, BUG-4):
         last_spread = round(h[-1] - l[-1], 2)
-        prev_spread = round(h[-2] - l[-2], 2)
-        last_cp = round((c[-1] - l[-1]) / last_spread * 100, 1) if last_spread > 0 else 50.0
-        prev_cp = round((c[-2] - l[-2]) / prev_spread * 100, 1) if prev_spread > 0 else 50.0
-        last_rvol = round(v[-1] / sma20_vol, 2)
-        prev_rvol = round(v[-2] / sma20_vol, 2)
+        last_cp = round((c[-1] - l[-1]) / last_spread * 100.0, 1) if last_spread > 0 else 50.0
+        last_rvol = round(v[-1] / sma20_vol, 2) if sma20_vol > 0 else 1.0
 
-        prev_dump = (c[-2] < c[-3] and prev_cp <= 30.0 and prev_rvol >= 1.1)
-        prev_climax = (c[-2] > c[-3] and prev_cp >= 75.0 and prev_rvol >= 1.5)
+        vpa_status = classify_vpa(c, o, h, l, v, len(c) - 1, sma20_vol)
 
-        vpa_status = "Bình thường"
-        if last_rvol < 0.70:
-            if prev_dump and c[-1] <= c[-2]:
-                vpa_status = "Cảnh báo: Thiếu cầu trên đà rơi (No Demand)"
-            elif prev_climax:
-                vpa_status = "Tạm dừng sau tăng nóng (Inside bar)"
-            elif last_cp >= 35.0 and not prev_dump:
-                vpa_status = "No Supply chuẩn (Cạn vol giữ nền)"
-            elif last_cp < 35.0:
-                vpa_status = "Trôi cạn vol (Thiếu cầu ngắn hạn)"
-        elif last_cp >= 60.0 and (h[-1] - c[-1]) < (c[-1] - l[-1]) and last_rvol <= 1.2:
-            vpa_status = "Test of Supply (Rút chân cạn cung)"
-        elif last_rvol >= 1.3 and last_cp >= 65.0 and c[-1] > c[-2]:
-            vpa_status = "Bùng nổ dòng tiền (SOS tiền lớn vào)"
-        elif prev_dump and last_cp >= 50.0:
-            vpa_status = "Chớm dừng rơi (Stopping Volume / Hấp thụ)"
-        elif last_cp <= 25.0:
-            vpa_status = "Chịu áp lực bán ngắn hạn"
+        # BUG-1: Loại bỏ ngay mã có tín hiệu VPA tiêu cực
+        if vpa_status in BEARISH_VPA:
+            continue
 
         prior_40_close_high = max(c[-41:-1])
         prior_40_high = max(h[-41:-1])
-        base_low_40 = min(l[-40:])
+        base_low_40 = min(l[-41:-1])  # BUG-2: Loại trừ nến hiện tại để tránh phồng base_depth
 
-        # 5. Phân loại Kịch bản (Archetype Classification):
+        # 6. Phân loại Kịch bản (Archetype Classification):
         if p_cur >= prior_40_close_high * 0.985:
             # Kịch bản B: VƯỢT ĐỈNH NỀN GIÁ / VCP PIVOT
+            # BUG-3: Kiểm tra Upthrust / False Breakout tại vùng Breakout
+            if last_cp <= 30.0 and last_rvol >= 1.2:
+                continue
+
             setup_type = "VƯỢT ĐỈNH (Breakout / VCP)"
             pivot = prior_40_close_high
             base_depth = round(pivot - base_low_40, 2)
 
+            # BUG-7: Target validity cho Breakout - nền phải đủ sâu
+            if base_depth < 1.5 * atr14:
+                continue
+
             stop_loss = round(pivot - 1.0 * atr14, 2)
             if p_cur - stop_loss < 0.8 * atr14:
                 stop_loss = round(p_cur - 1.0 * atr14, 2)
-            risk_pct = round((p_cur - stop_loss) / p_cur * 100, 2)
+            risk_pct = round((p_cur - stop_loss) / p_cur * 100.0, 2)
 
             target_1 = round(p_cur + base_depth * 0.8, 2)
             target_2 = round(p_cur + base_depth * 1.3, 2)
-            reward_1_pct = round((target_1 - p_cur) / p_cur * 100, 2)
-            reward_2_pct = round((target_2 - p_cur) / p_cur * 100, 2)
+            reward_1_pct = round((target_1 - p_cur) / p_cur * 100.0, 2)
+            reward_2_pct = round((target_2 - p_cur) / p_cur * 100.0, 2)
             pivot_or_support = pivot
+            support_density = 0
+            support_tag = "[BREAKOUT_PIVOT]"
         else:
             # Kịch bản A: NỀN HỖ TRỢ / RANGE REBOUND (Wyckoff Spring / LPS)
             setup_type = "NỀN HỖ TRỢ (Range Rebound)"
@@ -650,27 +772,58 @@ def scan_high_rr_setups(
             if p_cur < prior_support_15d:
                 continue
 
-            dist_to_sup_pct = round((p_cur - prior_support_15d) / prior_support_15d * 100, 2)
+            dist_to_sup_pct = round((p_cur - prior_support_15d) / prior_support_15d * 100.0, 2)
             if dist_to_sup_pct > 5.0:
                 continue
 
-            stop_loss = round(prior_support_15d - (1.0 * atr14), 2)
-            risk_pct = round((p_cur - stop_loss) / p_cur * 100, 2)
+            # Nâng cấp Mục 2.A1: Đánh giá Support Density trong 40 phiên trước
+            support_density = sum(1 for low_val in l[-41:-1] if abs(low_val - prior_support_15d) / prior_support_15d <= 0.015)
+            if support_density < 2:
+                support_tag = "[WEAK_SUPPORT]"
+                buffer_atr = 1.2 * atr14
+            else:
+                support_tag = "[STRONG_SUPPORT]"
+                buffer_atr = 1.0 * atr14
+
+            stop_loss = round(prior_support_15d - buffer_atr, 2)
+            risk_pct = round((p_cur - stop_loss) / p_cur * 100.0, 2)
 
             target_1 = prior_40_close_high
             target_2 = prior_40_high
-            reward_1_pct = round((target_1 - p_cur) / p_cur * 100, 2)
-            reward_2_pct = round((target_2 - p_cur) / p_cur * 100, 2)
+            reward_1_pct = round((target_1 - p_cur) / p_cur * 100.0, 2)
+            reward_2_pct = round((target_2 - p_cur) / p_cur * 100.0, 2)
             pivot_or_support = prior_support_15d
 
         # Kiểm tra ngưỡng chịu rủi ro và biên lợi nhuận khả thi
         if risk_pct <= 0 or risk_pct > max_risk_pct or reward_1_pct < 3.5:
             continue
 
-        rr_1 = round(reward_1_pct / risk_pct, 2)
-        rr_2 = round(reward_2_pct / risk_pct, 2)
+        risk_val = p_cur - stop_loss
+        rr_1 = round((target_1 - p_cur) / risk_val, 2) if risk_val > 0 else 0.0
+        rr_2 = round((target_2 - p_cur) / risk_val, 2) if risk_val > 0 else 0.0
         if rr_1 < min_rr:
             continue
+
+        # 7. Tính điểm Xếp hạng Toàn diện (Weighted Composite Score - Mục 2.E):
+        rr_1_norm = min(1.0, max(0.0, (rr_1 - 1.8) / 3.2))
+        if vpa_status in ["Bùng nổ dòng tiền (SOS tiền lớn vào)", "Chớm dừng rơi (Stopping Volume / Hấp thụ)"]:
+            vpa_score_norm = 1.0
+        elif vpa_status == "Test of Supply (Rút chân cạn cung)":
+            vpa_score_norm = 0.85
+        elif vpa_status == "No Supply chuẩn (Cạn vol giữ nền)":
+            vpa_score_norm = 0.80
+        else:
+            vpa_score_norm = 0.50
+
+        rs_score_norm = min(1.0, max(0.0, (rs_score - (-5.0)) / 20.0))
+        support_density_norm = 0.70 if setup_type.startswith("VƯỢT ĐỈNH") else min(1.0, support_density / 5.0)
+        adtv_norm = min(1.0, max(0.0, (avg_val_20d_bil - 15.0) / 85.0))
+        rs_bonus = 0.05 if rs_score >= 0 else 0.0
+
+        composite_score = round(
+            min(1.0, 0.35 * rr_1_norm + 0.25 * vpa_score_norm + 0.20 * rs_score_norm + 0.10 * support_density_norm + 0.10 * adtv_norm + rs_bonus),
+            3
+        )
 
         trend_label = "Uptrend (>SMA50)" if p_cur >= sma50 else "Tích lũy sát SMA50"
         setups.append({
@@ -680,7 +833,10 @@ def scan_high_rr_setups(
             "current_price": p_cur,
             "trend": trend_label,
             "slope_5d_sma50_%": slope_5d,
+            "rs_score": rs_score,
             "support_or_pivot": pivot_or_support,
+            "support_density": support_density,
+            "support_tag": support_tag,
             "atr_14": round(atr14, 2),
             "stop_loss": stop_loss,
             "target_1_conservative": target_1,
@@ -690,6 +846,7 @@ def scan_high_rr_setups(
             "reward_2_pct": reward_2_pct,
             "rr_1_conservative": rr_1,
             "rr_2_optimistic": rr_2,
+            "composite_score": composite_score,
             "rvol": last_rvol,
             "close_pos_%": last_cp,
             "vpa_status": vpa_status,
@@ -697,7 +854,8 @@ def scan_high_rr_setups(
             "avg_vol_20d": int(sma20_vol)
         })
 
-    setups.sort(key=lambda x: x["rr_1_conservative"], reverse=True)
+    # Xếp hạng ưu tiên theo Composite Score, sau đó đến rr_1_conservative
+    setups.sort(key=lambda x: (x["composite_score"], x["rr_1_conservative"]), reverse=True)
 
     return {
         "scanned_count": len(target_universe),
@@ -706,9 +864,12 @@ def scan_high_rr_setups(
         "methodology": {
             "liquidity_filter": f"ADTV >= {min_avg_val_bil} tỷ VNĐ/phiên (Chống trượt giá cho vốn lớn)",
             "trend_filter": "Price >= SMA50 * 0.965 & SMA50 Slope 5D >= -1.0%",
+            "rs_filter": "RS_Score = 0.6*RS_20D + 0.4*RS_5D >= -5.0% vs VNINDEX",
             "dual_archetypes": "Type A (Range Rebound mua sát hỗ trợ) & Type B (Breakout/VCP theo Measured Move)",
-            "dynamic_stop_loss": "Support/Pivot - (0.7 ~ 1.0) * ATR14",
-            "context_aware_vpa": "Phân tích đa phiên T-1 và T (Phân biệt No Supply với No Demand)"
+            "support_density": "Mật độ test đáy 40 phiên: Weak Support (<2 touch -> buffer 1.2*ATR14) vs Strong Support (>=3 touch -> buffer 1.0*ATR14)",
+            "dynamic_stop_loss": "Support/Pivot - 1.0 * ATR14 (hoặc 1.2 * ATR14 nếu Weak Support)",
+            "context_aware_vpa": "Phân tích đa phiên (Grinding No Demand, Upthrust, No Supply, Stopping Vol, SOS)",
+            "composite_ranking": "Composite = 0.35*RR1 + 0.25*VPA + 0.20*RS + 0.10*SupportDensity + 0.10*ADTV"
         },
         "top_setups": setups[:top_n]
     }

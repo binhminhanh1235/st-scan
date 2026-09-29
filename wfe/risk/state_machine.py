@@ -51,16 +51,21 @@ class PositionRiskProfile:
 
 
 def compute_atr14(bars: List[MarketBar]) -> float:
-    """Computes current ATR 14 from closed bars."""
-    if len(bars) < 15:
+    """Computes current ATR 14 from closed bars using Wilder's smoothing."""
+    n = len(bars)
+    if n < 15:
         return (bars[-1].high - bars[-1].low) if bars else 1.0
     tr_list = []
-    for i in range(len(bars) - 14, len(bars)):
+    for i in range(1, n):
         h, l = bars[i].high, bars[i].low
         c_prev = bars[i - 1].close
         tr = max(h - l, abs(h - c_prev), abs(l - c_prev))
         tr_list.append(tr)
-    return sum(tr_list) / 14.0
+
+    curr_atr = sum(tr_list[:14]) / 14.0
+    for i in range(14, len(tr_list)):
+        curr_atr = (curr_atr * 13.0 + tr_list[i]) / 14.0
+    return curr_atr
 
 
 def calculate_sl1(

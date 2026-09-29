@@ -210,7 +210,10 @@ class StructureEngine:
         # Test: in 25 bars, Event_Low * 0.995 <= Low <= Event_Low * 1.06
         has_test = False
         test_event = None
-        for i in range(max(1, n - cfg.test_lookback), n):
+        test_start = max(1, n - cfg.test_lookback)
+        if spring_event is not None and "reclaim_bar" in spring_event.details:
+            test_start = max(test_start, spring_event.details["reclaim_bar"] + 1)
+        for i in range(test_start, n):
             if event_low_val * cfg.test_low_ratio_min <= lows[i] <= event_low_val * cfg.test_low_ratio_max:
                 has_test = True
                 test_event = QuantitativeEvent(
