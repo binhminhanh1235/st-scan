@@ -102,7 +102,8 @@ class WFEScanner:
             flow=flow_res,
             structure=structure_res,
             volume=volume_res,
-            kill_switch_flow_off=self.kill_switch.is_flow_off
+            kill_switch_flow_off=self.kill_switch.is_flow_off,
+            flow_mode=self.kill_switch.flow_mode
         )
 
         # 6. L3: Risk & Gap/Floor Simulation
@@ -134,12 +135,25 @@ class WFEScanner:
 
         if policy_res.classification == "ACTIONABLE" and policy_res.final_size_pct > 0:
             # Patch V3.1: 3.z Risk cap là ràng buộc cứng
-            p99_loss_nav = simulate_gap_floor_risk(
+            # Patch V3.5: seed derived from symbol+params_hash so the p99 figure is
+            # reproducible run-to-run (audit-trail contract) while still varying
+            # across symbols/configs.
+            # Patch V3.5.1: use blake2b instead of builtin hash() — hash() on str is
+            # salted by PYTHONHASHSEED, so the MC audit seed (and p99 figures written
+            # to trace/last_run_state) was NOT reproducible across processes/servers.
+            import hashlib as _hl
+            risk_seed = int.from_bytes(
+                _hl.blake2b(f"{symbol}|{curr_date}|{self.registry.global_hash}".encode(), digest_size=4).digest(),
+                "big",
+            )
+            gap_sim = simulate_gap_floor_risk(
                 entry_price=curr_price,
                 sl=sl1,
                 nav_allocation_pct=policy_res.final_size_pct / 100.0,
-                num_simulations=2000
+                num_simulations=2000,
+                seed=risk_seed
             )
+            p99_loss_nav = gap_sim["p99_loss_nav"]
             max_risk = self.registry.risk.max_total_risk_p99_nav
             if p99_loss_nav > max_risk:
                 old_size = policy_res.final_size_pct
@@ -171,13 +185,15 @@ class WFEScanner:
             else:
                 liq_capped_size = policy_res.final_size_pct
 
-            # Recalculate p99 loss for final capped size
-            p99_loss_nav = simulate_gap_floor_risk(
+            # Recalculate p99 loss for final capped size (same seed -> reproducible)
+            gap_sim = simulate_gap_floor_risk(
                 entry_price=curr_price,
                 sl=sl1,
                 nav_allocation_pct=policy_res.final_size_pct / 100.0,
-                num_simulations=2000
+                num_simulations=2000,
+                seed=risk_seed
             )
+            p99_loss_nav = gap_sim["p99_loss_nav"]
 
             if policy_res.final_size_pct < 5.0:
                 policy_res.final_size_pct = 0.0
@@ -185,6 +201,8 @@ class WFEScanner:
                 policy_res.actions.append("exclude: size < 5% NAV after risk haircut -> moved to WATCHLIST")
         else:
             p99_loss_nav = 0.0
+            gap_sim = {"p99_loss_nav": 0.0, "p95_loss_nav": 0.0,
+                       "p_normal": 1.0, "p_gap": 0.0, "p_floor": 0.0}
 
         # Patch V3.3: Cap loop audit trace
         policy_res.trace.append(
@@ -195,6 +213,17 @@ class WFEScanner:
         policy_res.trace.append(
             f"Risk Check: Entry={curr_price:.2f}, SL1={sl1:.2f}, ATR14={atr14:.2f}, "
             f"p99_simulated_loss_nav={p99_loss_nav*100:.2f}% (Limit <= {self.registry.risk.max_total_risk_p99_nav*100:.1f}%)"
+        )
+        # Patch V3.5: expose MC seed + realized event frequencies in the audit trace
+        # so downstream consumers can reproduce or challenge the p99 figure.
+        if policy_res.classification == "ACTIONABLE" and raw_size > 0:
+            mc_seed_str = str(risk_seed)
+        else:
+            mc_seed_str = "n/a"
+        policy_res.trace.append(
+            f"MC Audit: seed={mc_seed_str}, "
+            f"realized_freq normal/gap/floor = {gap_sim['p_normal']:.3f}/{gap_sim['p_gap']:.3f}/{gap_sim['p_floor']:.3f} "
+            f"(prior 0.90/0.08/0.02), p95={gap_sim['p95_loss_nav']*100:.2f}% NAV"
         )
 
         # 7. L4: Ops & Drift Monitoring
@@ -237,6 +266,20 @@ class WFEScanner:
 
             # Filter candidates by minimum p_success
             if res.policy.p_success >= min_p_success:
+                results.append(res)
+
+        # Patch V3.5.2 (phát hiện khi chạy dữ liệu thật — Yahoo HOSE 20 mã):
+        # Bộ lọc qualified CHỈ dựa trên p_success mà không giao thoa với gate
+        # ACTIONABLE, trong khi sizing/budget lại chỉ chạy trên ACTIONABLE.
+        # Hệ quả thực đo: mã WATCHLIST p>=0.45 (EV âm, size 0) chiếm slot
+        # "qualified", còn DGC ACTIONABLE p=0.444 size=22% bị loại khỏi output.
+        # Fix: mọi setup ACTIONABLE đủ điều kiện kích hoạt đều được vào vòng
+        # xét duyệt, bất kể p so với min_p_success; min_p_success vẫn áp cho
+        # WATCHLIST reserve.
+        actionable_syms = {c.symbol for c in results if c.classification == "ACTIONABLE"}
+        for sym, res in all_results_by_sym.items():
+            if (sym not in actionable_syms and res.classification == "ACTIONABLE"
+                    and res.policy and res.policy.data_ok):
                 results.append(res)
 
         # Patch V3.2 & V3.5: Portfolio budget constraint (sum of approved_size <= nav_budget)
