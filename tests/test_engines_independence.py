@@ -32,7 +32,9 @@ def get_imported_modules(file_path: str):
 
 def test_engines_do_not_import_each_other():
     """Verify strictly by AST that no engine imports any other engine."""
-    engines_dir = "/Volumes/Data/invest/wfe/engines"
+    # Resolve repo root from this test file so the check runs anywhere (CI, laptops).
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    engines_dir = os.path.join(repo_root, "wfe", "engines")
     flow_file = os.path.join(engines_dir, "flow_engine.py")
     struct_file = os.path.join(engines_dir, "structure_engine.py")
     vol_file = os.path.join(engines_dir, "volume_engine.py")

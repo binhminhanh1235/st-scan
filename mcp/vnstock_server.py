@@ -12,13 +12,19 @@ import datetime
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
-from mcp.server.mcpserver import MCPServer
+# NOTE: `mcp.server.mcpserver.MCPServer` never existed in any released version of
+# the `mcp` SDK; the correct import is `mcp.server.fastmcp.FastMCP` (same API:
+# @server.tool(), .run(), etc.). Fixed so the server can actually be imported.
+from mcp.server.fastmcp import FastMCP as MCPServer
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
-if "/Volumes/Data/invest" not in sys.path:
-    sys.path.insert(0, "/Volumes/Data/invest")
+# Allow an explicit override for non-standard checkout locations instead of a
+# hardcoded developer-machine absolute path.
+_extra_path = os.environ.get("VNSTOCK_EXTRA_PATH")
+if _extra_path and _extra_path not in sys.path:
+    sys.path.insert(0, _extra_path)
 
 from wfe.scanner import WFEScanner
 from wfe.radar import MCDXFlowRadar

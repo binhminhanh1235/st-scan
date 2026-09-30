@@ -58,25 +58,43 @@ class PolicyDecision:
 
 
 # Decile EV Lookup Table (Calibrated OOS average R per decile of p_success)
+# Patch V3.5.2: anchor moved from +0.10 to 0.00 at p=0.50. A coin-flip bet must have
+# zero expectancy by definition; the old +0.10R anchor handed every neutral setup a
+# positive EV (S2 diagnostic flagged this as ISSUE). These are PRIOR placeholders
+# until WalkForwardValidator produces labeled win/lose samples -- refit via
+# fit_platt_params() + empirical EV curve before trusting any number here.
 EV_DECILE_TABLE = [
     (0.10, -0.65),
     (0.20, -0.45),
     (0.30, -0.30),
     (0.40, -0.10),
-    (0.50, +0.10),
-    (0.60, +0.28),
-    (0.70, +0.55),
-    (0.80, +0.90),
-    (0.90, +1.35),
-    (1.00, +2.10),
+    (0.50,  0.00),
+    (0.60, +0.18),
+    (0.70, +0.45),
+    (0.80, +0.80),
+    (0.90, +1.25),
+    (1.00, +2.00),
 ]
 
 
 def lookup_ev(p: float) -> float:
-    """Lookup expected value (EV in terms of R) based on calibrated probability."""
+    """
+    Lookup expected value (EV in terms of R) based on calibrated probability.
+
+    Patch V3.5: Piecewise-LINEAR interpolation across the decile anchors instead of
+    step-function lookup (continuous + monotone, no discontinuous 0.75R jumps).
+    Patch V3.5.2: EV(0.50)=0.0 exactly -- neutral probability => neutral expectancy.
+    """
+    p = max(0.0, min(1.0, p))
+    prev_p, prev_ev = 0.0, EV_DECILE_TABLE[0][1]
     for upper_bound, ev in EV_DECILE_TABLE:
         if p <= upper_bound:
-            return ev
+            span = upper_bound - prev_p
+            if span <= 0:
+                return ev
+            frac = (p - prev_p) / span
+            return prev_ev + frac * (ev - prev_ev)
+        prev_p, prev_ev = upper_bound, ev
     return EV_DECILE_TABLE[-1][1]
 
 
@@ -84,6 +102,9 @@ def calibrate_platt_prob(score: float, a: float = 0.075, b: float = -4.0) -> flo
     """
     Platt scaling sigmoid calibration from raw composite score (0-100) to probability [0, 1].
     sigmoid(a * score + b)
+
+    NOTE: (a, b) are PRIOR placeholders until WalkForwardValidator produces labeled
+    win/lose samples; use fit_platt_params() to re-estimate them from data.
     """
     z = a * score + b
     # Clip z to avoid overflow
@@ -91,11 +112,58 @@ def calibrate_platt_prob(score: float, a: float = 0.075, b: float = -4.0) -> flo
     return 1.0 / (1.0 + math.exp(-z))
 
 
+def fit_platt_params(scores: List[float], labels: List[int], lr: float = 0.5,
+                     epochs: int = 4000, l2: float = 1e-4) -> Tuple[float, float]:
+    """
+    Fit Platt scaling parameters (a, b) by regularized logistic regression via
+    gradient descent on the log-loss. `labels` are realized outcomes (1 = trade
+    hit its T1 target, 0 = stop-first). Returns (a, b) ready for calibrate_platt_prob().
+
+    This closes the loop promised by the "Calibrated" header of EV_DECILE_TABLE:
+    calibration must come from OOS-labeled trades, not hardcoded priors.
+
+    Patch V3.5.1: raw gradient steps are unstable because score magnitudes (~0-100)
+    make grad_a huge; we standardize scores (zero mean / unit var) internally and
+    map the fitted coefficients back to the original scale: a_orig = a_z / std,
+    b_orig = b_z - a_z * mean / std. Also uses a larger LR with the standardized
+    design, which converges in a few thousand full-batch steps.
+    """
+    if len(scores) != len(labels) or not scores:
+        raise ValueError("scores and labels must be non-empty and equal length")
+    n = float(len(scores))
+    mean = sum(scores) / n
+    var = sum((s - mean) ** 2 for s in scores) / n
+    std = math.sqrt(var) if var > 0 else 1.0
+    z_scores = [(s - mean) / std for s in scores]
+
+    a_z, b_z = 0.0, 0.0  # start neutral (p=0.5) in standardized space
+    for _ in range(epochs):
+        grad_a, grad_b = 0.0, 0.0
+        for zs, y in zip(z_scores, labels):
+            p_hat = calibrate_platt_prob(zs, a=a_z, b=b_z)
+            err = p_hat - y
+            grad_a += err * zs
+            grad_b += err
+        a_z -= lr * (grad_a / n + l2 * a_z)
+        b_z -= lr * (grad_b / n + l2 * b_z)
+
+    a_orig = a_z / std
+    b_orig = b_z - a_z * mean / std
+    return round(a_orig, 6), round(b_orig, 6)
+
+
 class PolicyEngine:
     """Policy Engine aggregates numeric features and outputs Expectancy-driven decisions."""
 
     def __init__(self, config: Optional[PolicyEngineConfig] = None):
         self.config = config or PolicyEngineConfig()
+        # Patch V3.5 regime hysteresis state (was promised in docstring but never
+        # implemented). Counter-Trend requires `regime_hysteresis_bars` consecutive
+        # confirming bars to ACTIVATE and the same count of contradicting bars to
+        # DEACTIVATE, preventing haircut flip-flopping around the 1.05 boundary.
+        self._raw_counter_streak = 0
+        self._raw_normal_streak = 0
+        self._latched_counter_trend = False
 
     @property
     def params_hash(self) -> str:
@@ -106,6 +174,10 @@ class PolicyEngine:
         Evaluate Counter-Trend Regime:
         max(High[-120:-60]) > max(High[-60:-20]) * 1.05 -> [Counter-Trend]
         Includes close-based fallback and 3-bar hysteresis against noise.
+
+        Patch V3.5: hysteresis is now actually implemented (previously the docstring
+        promised it but `regime_hysteresis_bars` was never referenced). The raw signal
+        must persist for N consecutive evaluations before the latched regime flips.
         """
         cfg = self.config
         trace = []
@@ -128,9 +200,33 @@ class PolicyEngine:
         peak_new_c = max(recent_closes) if recent_closes else 1.0
         is_counter_close = peak_old_c > (peak_new_c * cfg.counter_trend_peak_ratio)
 
-        final_counter = is_counter or is_counter_close
+        raw_counter = is_counter or is_counter_close
+
+        # --- Hysteresis latch (N-bar confirmation both directions) ---
+        hyst = max(1, int(cfg.regime_hysteresis_bars))
+        if raw_counter:
+            self._raw_counter_streak += 1
+            self._raw_normal_streak = 0
+        else:
+            self._raw_normal_streak += 1
+            self._raw_counter_streak = 0
+
+        prev_latched = self._latched_counter_trend
+        if not self._latched_counter_trend and self._raw_counter_streak >= hyst:
+            self._latched_counter_trend = True
+        elif self._latched_counter_trend and self._raw_normal_streak >= hyst:
+            self._latched_counter_trend = False
+
+        final_counter = self._latched_counter_trend
         flag_str = "[Counter-Trend]" if final_counter else "[Normal]"
-        trace.append(f"Regime: peak_old={peak_old:.2f}, peak_new={peak_new:.2f} (ratio={peak_old/peak_new:.2f}) -> {flag_str}")
+        raw_flag_str = "[Counter-Trend]" if raw_counter else "[Normal]"
+        trace.append(
+            f"Regime: peak_old={peak_old:.2f}, peak_new={peak_new:.2f} "
+            f"(ratio={peak_old/peak_new:.2f}) raw_signal={raw_flag_str} "
+            f"streak(counter={self._raw_counter_streak}, normal={self._raw_normal_streak}) "
+            f"hysteresis_bars={hyst} -> latched={flag_str}"
+            + (" [LATCH-FLIP]" if final_counter != prev_latched else "")
+        )
         return final_counter, flag_str, trace
 
     def evaluate(
@@ -139,11 +235,20 @@ class PolicyEngine:
         flow: FlowOutput,
         structure: StructureOutput,
         volume: VolumeOutput,
-        kill_switch_flow_off: bool = False
+        kill_switch_flow_off: bool = False,
+        flow_mode: str = "live"
     ) -> PolicyDecision:
         cfg = self.config
         p_hash = self.params_hash
         trace: List[str] = []
+
+        # Patch V3.5: `down_rank` was a dead governance state (KillSwitchManager
+        # exposed is_flow_down_ranked but nothing consumed it). Now wired through:
+        # flow-derived features are shrunk toward their neutral priors by 50%,
+        # so the scorecard still sees flow evidence but with reduced authority.
+        if flow_mode not in ("live", "down_rank", "off"):
+            raise ValueError(f"Invalid flow_mode: {flow_mode}")
+        down_rank = flow_mode == "down_rank" and not kill_switch_flow_off
 
         # Data integrity check
         if not (structure.data_ok and volume.data_ok):
@@ -184,6 +289,16 @@ class PolicyEngine:
             flow_dist_score = flow.dist.value if flow.dist.value is not None else 30.0
             flow_trend_score = flow.trend.value if flow.trend.value is not None else 50.0
             trend_collapse = flow.trend_collapse_warning
+
+            if down_rank:
+                # Shrink toward neutral priors (50 accum / 30 dist / 50 trend)
+                flow_accum_score = 50.0 + 0.5 * (flow_accum_score - 50.0)
+                flow_dist_score = 30.0 + 0.5 * (flow_dist_score - 30.0)
+                flow_trend_score = 50.0 + 0.5 * (flow_trend_score - 50.0)
+                trace.append(
+                    "Flow Engine DOWN-RANKED (Kill-switch): flow features shrunk 50% toward "
+                    f"neutral -> accum={flow_accum_score:.1f}, dist={flow_dist_score:.1f}, trend={flow_trend_score:.1f}"
+                )
 
         # Event quality feature mapping
         best_event_quality = 50.0
@@ -391,11 +506,30 @@ class PolicyEngine:
         )
 
         # 6. Sizing Calculation & Activation Gate
-        if not is_setup_activated or not t1_valid:
-            base_size = 0.0
-            final_size = 0.0
+        # Patch V3.5.2 (thực đo dữ liệu thật): trước đây gate CHỈ kiểm tra
+        # is_setup_activated + t1_valid, bỏ qua chính sách EV đã khai báo ở
+        # tranche T1 (`ev_r >= cfg.t1_ev_min`, registry = 0.15R). Hệ quả:
+        # FPT p=0.388 EV=-0.12R và SHB p=0.334 EV=-0.23R vẫn được gắn nhãn
+        # ACTIONABLE với size 25%/11% NAV — hệ thống cấp vốn dương cho setup
+        # có kỳ vọng ÂM, đúng loại lỗi mà audit trail của repo cam kết chặn.
+        #
+        # Patch V3.5.3 (diagnostic cross-process bug hunt): `base_size`/`final_size`
+        # phải được KHỞI TẠO về 0.0 trước mọi nhánh. Trước đó chúng chỉ được gán
+        # trong các nhánh sizing cụ thể; mọi đường rơi vào else-final (setup active,
+        # t1 valid, EV pass nhưng không khớp tier nào) hoặc path sớm khiến dòng
+        # `ev_mult if ...` và PolicyDecision UnboundLocalError — tái hiện thực đo
+        # bởi tests/test_portfolio_audit_v32.py (4 fail) và test_ops_and_drift (1 fail).
+        base_size = 0.0
+        final_size = 0.0
+        ev_mult = 1.0
+        regime_mult = 1.0
+        ops_mult = 1.0
+        ev_gate_ok = ev_r >= cfg.t1_ev_min
+        if not is_setup_activated or not t1_valid or not ev_gate_ok:
             classification = "WATCHLIST"
-            reason_ex = "setup chưa kích hoạt" if not is_setup_activated else "target T1 không hợp lệ (T1 <= p_cur)"
+            reason_ex = ("setup chưa kích hoạt" if not is_setup_activated
+                         else "target T1 không hợp lệ (T1 <= p_cur)" if not t1_valid
+                         else f"EV {ev_r:+.2f}R < ngưỡng t1_ev_min {cfg.t1_ev_min:.2f}R")
             if is_counter_trend:
                 reason_ex += " + [Counter-Trend]"
             actions.append(f"exclude: {reason_ex} -> sizing 0%, moved to WATCHLIST")

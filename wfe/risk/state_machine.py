@@ -10,7 +10,7 @@ Architecture Contract:
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import random
 import numpy as np
 from wfe.config.registry import RiskConfig, compute_params_hash
@@ -140,38 +140,61 @@ def simulate_gap_floor_risk(
     sl: float,
     nav_allocation_pct: float = 0.20,  # e.g. 20% NAV allocated
     num_simulations: int = 5000,
-    floor_pct: float = 0.07  # 7% HOSE daily limit
-) -> float:
+    floor_pct: float = 0.07,  # 7% HOSE daily limit
+    seed: Optional[int] = None,
+    gap_event_probs: Optional[Tuple[float, float, float]] = None,
+    slippage_range: Tuple[float, float] = (0.01, 0.03)
+) -> Dict[str, float]:
     """
     Monte Carlo simulation of gap-down and floor fill slippage.
-    Returns p99 worst-case portfolio loss as % of NAV.
+
+    Patch V3.5 fixes:
+      - Deterministic reproducibility: pass `seed` (recorded in the audit trace) so
+        identical inputs always yield identical p99 — required by the repo's own
+        audit-trail contract. Without a seed the previous version produced drifting
+        numbers run-to-run.
+      - Vectorized NumPy execution (was a Python loop over random.random()).
+      - Empirical calibration hook: `gap_event_probs` = (p_normal_fill, p_gap_down,
+        p_floor_lock) can be estimated from HOSE history (frequency of opens below
+        stop, frequency of floor-locked sessions) instead of the hardcoded
+        90/8/2 scenario prior; `slippage_range` likewise.
+
+    Returns dict with p99/p95 loss (% NAV) and realized event frequencies, so the
+    caller can log the empirical-vs-prior divergence into the trace.
     """
     if entry_price <= 0 or sl >= entry_price:
-        return 0.0
+        return {"p99_loss_nav": 0.0, "p95_loss_nav": 0.0,
+                "p_normal": 1.0, "p_gap": 0.0, "p_floor": 0.0}
 
+    rng = np.random.default_rng(seed)
     nominal_loss_pct = (entry_price - sl) / entry_price
 
-    losses_pct_nav = []
-    for _ in range(num_simulations):
-        # 90% normal fill at SL, 8% gap-down below SL, 2% floor lock
-        rand_event = random.random()
-        if rand_event < 0.90:
-            actual_loss_pct = nominal_loss_pct
-        elif rand_event < 0.98:
-            # Slippage gap: 1% to 3% below SL
-            slippage = random.uniform(0.01, 0.03)
-            actual_loss_pct = min(nominal_loss_pct + slippage, floor_pct * 1.5)
-        else:
-            # Locked at floor
-            actual_loss_pct = max(nominal_loss_pct, floor_pct)
+    pn, pg, pf = gap_event_probs if gap_event_probs else (0.90, 0.08, 0.02)
+    total = pn + pg + pf
+    probs = np.array([pn / total, pg / total, pf / total])
 
-        loss_nav = actual_loss_pct * nav_allocation_pct
-        losses_pct_nav.append(loss_nav)
+    # Categorical draw: 0 = normal fill at SL, 1 = gap-down slippage, 2 = floor lock
+    events = rng.choice(3, size=num_simulations, p=probs)
+    lo, hi = slippage_range
+    slippages = rng.uniform(lo, hi, size=num_simulations)
 
-    losses_pct_nav.sort()
-    # 99th percentile loss
-    p99_idx = int(0.99 * len(losses_pct_nav))
-    return round(losses_pct_nav[p99_idx], 4)
+    actual_loss_pct = np.full(num_simulations, nominal_loss_pct)
+    gap_mask = events == 1
+    floor_mask = events == 2
+    actual_loss_pct[gap_mask] = np.minimum(nominal_loss_pct + slippages[gap_mask], floor_pct * 1.5)
+    actual_loss_pct[floor_mask] = np.maximum(nominal_loss_pct, floor_pct)
+
+    losses_pct_nav = np.sort(actual_loss_pct * nav_allocation_pct)
+    p99 = float(losses_pct_nav[min(int(0.99 * len(losses_pct_nav)), len(losses_pct_nav) - 1)])
+    p95 = float(losses_pct_nav[min(int(0.95 * len(losses_pct_nav)), len(losses_pct_nav) - 1)])
+
+    return {
+        "p99_loss_nav": round(p99, 4),
+        "p95_loss_nav": round(p95, 4),
+        "p_normal": round(float((events == 0).mean()), 4),
+        "p_gap": round(float(gap_mask.mean()), 4),
+        "p_floor": round(float(floor_mask.mean()), 4),
+    }
 
 
 class PositionStateMachine:
