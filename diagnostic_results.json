@@ -1,0 +1,302 @@
+{
+  "meta": {
+    "argv": [
+      "scripts/diagnostic_report.py",
+      "--universe-size",
+      "8",
+      "--days",
+      "730"
+    ],
+    "ts": "2026-09-29T11:30:08.308432+00:00",
+    "universe_size": 8,
+    "days": 730
+  },
+  "checks": {
+    "env": {
+      "python": "3.12.10",
+      "platform": "Linux-4.19.91-c8dfc93.al7.x86_64-x86_64-with-glibc2.36",
+      "ok": true,
+      "missing_files": []
+    },
+    "tests": {
+      "ran": true,
+      "passed": 52,
+      "failed": 0,
+      "errors": 0,
+      "failures_detail": [],
+      "tail": "....................................................                     [100%]\n52 passed in 2.50s",
+      "duration_s": 3.1
+    },
+    "s1_determinism": {
+      "in_process_reproducible": true,
+      "cross_process_reproducible": true,
+      "seeds_differ": true,
+      "sample": {
+        "p99_loss_nav": 0.014,
+        "p95_loss_nav": 0.0126,
+        "p_normal": 0.8955,
+        "p_gap": 0.081,
+        "p_floor": 0.0235
+      },
+      "p99_n2000_samples": [
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014
+      ],
+      "p99_n20000_samples": [
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014
+      ],
+      "p99_stability_frac": 1.0
+    },
+    "s2_calibration": {
+      "curve": [
+        {
+          "score": 30,
+          "p": 0.148,
+          "ev_R": -0.5539
+        },
+        {
+          "score": 35,
+          "p": 0.2018,
+          "ev_R": -0.4473
+        },
+        {
+          "score": 40,
+          "p": 0.2689,
+          "ev_R": -0.3466
+        },
+        {
+          "score": 45,
+          "p": 0.3486,
+          "ev_R": -0.2027
+        },
+        {
+          "score": 50,
+          "p": 0.4378,
+          "ev_R": -0.0622
+        },
+        {
+          "score": 55,
+          "p": 0.5312,
+          "ev_R": 0.0562
+        },
+        {
+          "score": 60,
+          "p": 0.6225,
+          "ev_R": 0.2406
+        },
+        {
+          "score": 65,
+          "p": 0.7058,
+          "ev_R": 0.4702
+        },
+        {
+          "score": 70,
+          "p": 0.7773,
+          "ev_R": 0.7205
+        },
+        {
+          "score": 75,
+          "p": 0.8355,
+          "ev_R": 0.9597
+        }
+      ],
+      "ev_at_050": 0.0,
+      "anchor_ok": true,
+      "neutral_score_54": {
+        "p": 0.5124973964842103,
+        "ev": 0.0224953136715786
+      },
+      "monotonic_violations": 0,
+      "fit_check": "a=0.4513 b=-26.3048 p(40)=0.000 p(75)=0.999",
+      "fit_ok": true
+    },
+    "s3_killswitch": {
+      "matrix": {
+        "live": {
+          "classification": "ACTIONABLE",
+          "p_success": 0.926,
+          "ev_r": 1.44,
+          "size_pct": 100.0
+        },
+        "down_rank": {
+          "classification": "ACTIONABLE",
+          "p_success": 0.835,
+          "ev_r": 0.96,
+          "size_pct": 100.0
+        },
+        "off": {
+          "classification": "ACTIONABLE",
+          "p_success": 0.674,
+          "ev_r": 0.38,
+          "size_pct": 21.0
+        }
+      },
+      "delta_live_downrank_p": 0.09100000000000008,
+      "delta_live_off_p": 0.252,
+      "delta_size": 0.0,
+      "effective": true
+    },
+    "s4_hysteresis": {
+      "latched_on": 10,
+      "short_noise_flip": false,
+      "confirmed_flip": true,
+      "pass": true
+    },
+    "s6_walkforward": {
+      "n_splits": 4,
+      "gaps": [
+        5,
+        5,
+        5,
+        5
+      ],
+      "embargo_respected": true
+    },
+    "legacy_bridge": {
+      "import_ok": true,
+      "error": null,
+      "classify_smoke": "Bình thường"
+    },
+    "s5_real_pipeline": {
+      "source": "yahoo-live",
+      "attempted": 8,
+      "loaded": 8,
+      "actionable": 0,
+      "watchlist": 8,
+      "reserve": 0,
+      "rejected": 0,
+      "per_ticker": [
+        {
+          "ticker": "HPG",
+          "classification": "WATCHLIST",
+          "p_success": 0.279,
+          "ev_r": -0.33,
+          "size_pct": 0.0,
+          "setup": null,
+          "regime": "[Normal]",
+          "actions": [
+            "exclude: setup chưa kích hoạt -> sizing 0%, moved to WATCHLIST"
+          ]
+        },
+        {
+          "ticker": "VCB",
+          "classification": "WATCHLIST",
+          "p_success": 0.28,
+          "ev_r": -0.33,
+          "size_pct": 0.0,
+          "setup": null,
+          "regime": "[Normal]",
+          "actions": [
+            "exclude: setup chưa kích hoạt -> sizing 0%, moved to WATCHLIST"
+          ]
+        },
+        {
+          "ticker": "VNM",
+          "classification": "WATCHLIST",
+          "p_success": 0.499,
+          "ev_r": -0.0,
+          "size_pct": 0.0,
+          "setup": "BU_LPS_PHASE_D",
+          "regime": "[Normal]",
+          "actions": [
+            "exclude: EV -0.00R < ngưỡng t1_ev_min 0.15R -> sizing 0%, moved to WATCHLIST"
+          ]
+        },
+        {
+          "ticker": "FPT",
+          "classification": "WATCHLIST",
+          "p_success": 0.388,
+          "ev_r": -0.12,
+          "size_pct": 0.0,
+          "setup": "BU_LPS_PHASE_D",
+          "regime": "[Normal]",
+          "actions": [
+            "exclude: EV -0.12R < ngưỡng t1_ev_min 0.15R -> sizing 0%, moved to WATCHLIST"
+          ]
+        },
+        {
+          "ticker": "SSI",
+          "classification": "WATCHLIST",
+          "p_success": 0.18,
+          "ev_r": -0.49,
+          "size_pct": 0.0,
+          "setup": null,
+          "regime": "[Normal]",
+          "actions": [
+            "exclude: setup chưa kích hoạt -> sizing 0%, moved to WATCHLIST"
+          ]
+        },
+        {
+          "ticker": "HCM",
+          "classification": "WATCHLIST",
+          "p_success": 0.281,
+          "ev_r": -0.33,
+          "size_pct": 0.0,
+          "setup": null,
+          "regime": "[Normal]",
+          "actions": [
+            "exclude: setup chưa kích hoạt -> sizing 0%, moved to WATCHLIST"
+          ]
+        },
+        {
+          "ticker": "VND",
+          "classification": "WATCHLIST",
+          "p_success": 0.202,
+          "ev_r": -0.45,
+          "size_pct": 0.0,
+          "setup": null,
+          "regime": "[Normal]",
+          "actions": [
+            "exclude: setup chưa kích hoạt -> sizing 0%, moved to WATCHLIST"
+          ]
+        },
+        {
+          "ticker": "STB",
+          "classification": "WATCHLIST",
+          "p_success": 0.475,
+          "ev_r": -0.02,
+          "size_pct": 0.0,
+          "setup": "BU_LPS_PHASE_D",
+          "regime": "[Normal]",
+          "actions": [
+            "exclude: EV -0.02R < ngưỡng t1_ev_min 0.15R -> sizing 0%, moved to WATCHLIST"
+          ]
+        }
+      ],
+      "empirical": {
+        "gap_down_freq": 0.0347,
+        "floor_freq": 0.0083
+      },
+      "notes": [
+        "cached raw data -> real_data_cache.json"
+      ],
+      "p_dist": {
+        "min": 0.18,
+        "max": 0.499,
+        "mean": 0.323
+      },
+      "ev_dist": {
+        "min": -0.49,
+        "max": -0.0
+      },
+      "n_actionable_negative_ev": 0
+    }
+  }
+}

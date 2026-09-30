@@ -327,13 +327,19 @@ def check_killswitch() -> None:
         dl = abs(out["live"]["p_success"] - out["down_rank"]["p_success"])
         do = abs(out["live"]["p_success"] - out["off"]["p_success"])
         sz_dl = abs(out["live"]["size_pct"] - out["down_rank"]["size_pct"])
-        eff = dl >= 0.02 or sz_dl >= 1.0
-        tag = "CO Y NGHIA" if eff else ("YEU" if dl > 1e-6 else "KHONG TAC DUNG (dead state!)")
-        emit(f"  [ {'OK' if dl > 1e-6 else 'FAIL'} ] delta p live->down_rank={dl:.4f}, "
-             f"size delta={sz_dl:.2f}% [{tag}]")
+        # Patch V3.6 (C.1): tieu chi "co hieu luc" PHAI la cat von, khong chi cat diem.
+        # Thuoc do tren may user: p delta 0.09 nhung size delta = 0.00% -> van PASS
+        # "CO Y NGHIA" (governance rong). Nay size_delta >= 1.0% la dieu kien CAN.
+        size_ratio = (out["down_rank"]["size_pct"] / out["live"]["size_pct"]
+                      if out["live"]["size_pct"] > 0 else 1.0)
+        eff = sz_dl >= 1.0 and size_ratio <= 0.75
+        tag = "CO Y NGHIA (size bi cat)" if eff else ("KHONG CAT VON (governance rong!)" if dl > 1e-6 else "KHONG TAC DUNG (dead state!)")
+        emit(f"  [ {'OK' if eff else 'FAIL'} ] delta p live->down_rank={dl:.4f}, "
+             f"size delta={sz_dl:.2f}% (ratio={size_ratio:.2f}) [{tag}]")
         emit(f"      delta p live->off={do:.4f}")
         record("s3_killswitch", {"matrix": out, "delta_live_downrank_p": dl,
                                  "delta_live_off_p": do, "delta_size": sz_dl,
+                                 "size_ratio_downrank_vs_live": round(size_ratio, 3),
                                  "effective": eff})
     except Exception as ex:
         emit(f"  [ERROR] {type(ex).__name__}: {ex}")

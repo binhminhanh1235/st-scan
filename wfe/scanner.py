@@ -151,10 +151,16 @@ class WFEScanner:
                 sl=sl1,
                 nav_allocation_pct=policy_res.final_size_pct / 100.0,
                 num_simulations=2000,
-                seed=risk_seed
+                seed=risk_seed,
+                bars=bars,  # Patch V3.6 (C.2): empirical floor tail từ lịch sử PIT của chính mã
             )
             p99_loss_nav = gap_sim["p99_loss_nav"]
             max_risk = self.registry.risk.max_total_risk_p99_nav
+            if gap_sim.get("floor_source", "").startswith("empirical"):
+                policy_res.trace.append(
+                    f"Risk MC floor: empirical {gap_sim['floor_pct_used']*100:.2f}% "
+                    f"[{gap_sim['floor_source']}] (prior hardcode 7.00% đã bị dữ liệu HOSE bác bỏ)"
+                )
             if p99_loss_nav > max_risk:
                 old_size = policy_res.final_size_pct
                 scale = max_risk / p99_loss_nav
@@ -191,7 +197,8 @@ class WFEScanner:
                 sl=sl1,
                 nav_allocation_pct=policy_res.final_size_pct / 100.0,
                 num_simulations=2000,
-                seed=risk_seed
+                seed=risk_seed,
+                bars=bars,
             )
             p99_loss_nav = gap_sim["p99_loss_nav"]
 
