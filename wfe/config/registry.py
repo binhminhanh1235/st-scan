@@ -115,6 +115,9 @@ class PolicyEngineConfig:
     t2_flow_trend_min_pct: float = 60.0
     t2_rvol_min: float = 1.50
     t2_ev_min: float = 0.20
+    # Patch V3.6 (C.1): trần size cấp policy, khớp hard-cap single-stock của
+    # PortfolioRegistry (max_nav_per_stock) — scanner vẫn enforce lại tầng của nó.
+    max_nav_per_stock: float = 0.25
     # Exit ladder
     exit_dist_pct_min: float = 70.0
     exit_supply_zone_ratio: float = 0.97

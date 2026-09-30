@@ -154,3 +154,89 @@ def test_hysteresis_blip_and_confirmation():
     peC = PolicyEngine(cfg)
     seq = [bool(peC.evaluate_regime(B_OFF if k < 3 else B_ON)[0]) for k in range(7)]
     assert seq[:2] == [False, False] and seq[2] is True and all(seq[2:])
+
+
+# ---------- 5. Patch V3.6 C.1: down_rank must haircut SIZE, not just score ----------
+
+def test_down_rank_cuts_size():
+    """Thực đo diagnostic máy user (S3): down_rank hạ p nhưng size delta = 0.00%.
+    Ràng buộc hồi quy: khi live ACTIONABLE size>0, down_rank phải cho
+    size <= 0.75 * live size."""
+    from wfe.policy.policy_engine import PolicyEngine
+    cfg = PolicyEngineConfig()
+    bars = _synth_candles(n=140, seed=11, drift=0.002)
+    flow, struct, vol = _live_engines(bars)  # helper bên dưới
+    pe = PolicyEngine(cfg)
+    live = pe.evaluate(bars, flow, struct, vol, flow_mode="live")
+    if live.classification != "ACTIONABLE" or live.final_size_pct <= 0:
+        pytest.skip("fixture không kích hoạt ACTIONABLE — kiểm tra lại synth data")
+    down = PolicyEngine(cfg).evaluate(bars, flow, struct, vol, flow_mode="down_rank")
+    assert down.final_size_pct > 0, "down_rank không được về 0 (đó là mode off)"
+    assert down.final_size_pct <= 0.75 * live.final_size_pct + 0.5, (
+        f"down_rank governance rỗng: live={live.final_size_pct}% "
+        f"down={down.final_size_pct}%")
+
+
+class _V:
+    def __init__(self, v): self.value = v
+
+
+def _live_engines(bars):
+    """Feature row cố định giống S3 diagnostic -> đảm bảo live ACTIONABLE."""
+    class Flow:
+        data_ok = True
+        accum, dist, trend = _V(90.0), _V(10.0), _V(85.0)
+        trend_collapse_warning = False
+    class Struct:
+        data_ok = True
+        events = []
+        phase_prob = {"C": 0.6, "D": 0.7}
+        active_setup = "BU_LPS_PHASE_D"
+        is_box_unstable = False
+        diagnostics = {}
+        class levels:
+            t1, t2, tr_high, tr_mid, tr_low, major_supply, event_low = 30.0, 35.0, 26.0, 24.0, 20.0, 40.0, 22.0
+            t1_valid, target_tag = True, "[NORMAL]"
+    class Vol:
+        data_ok = True
+        event_qualities = {}
+        rvol = 2.0
+    return Flow(), Struct(), Vol()
+
+
+# ---------- 6. Patch V3.6 C.2: empirical floor tail ----------
+
+def test_estimate_tail_params_from_bars():
+    from wfe.risk.state_machine import estimate_tail_params_from_bars
+    # Chuỗi có một phiên sập -12% (open->close) mô phỏng thực đo HOSE
+    base = [MarketBar(date=f"d{i}", open=25, high=25.5, low=24.5, close=25.0, volume=1e6)
+            for i in range(60)]
+    crash = MarketBar(date="crash", open=25.0, high=25.0, low=21.9, close=21.9, volume=2e6)
+    bars = base + [crash]
+    t = estimate_tail_params_from_bars(bars)
+    assert t["worst_open_close"] >= 0.12, f"phải bắt được cú -12.2%: {t}"
+    assert t["suggested_floor"] >= t["floor_pct"] and t["suggested_floor"] >= 0.07
+    assert t["n_obs"] == 60
+    # Empty/short input -> fallback an toàn 7%, không crash
+    t0 = estimate_tail_params_from_bars([])
+    assert t0["suggested_floor"] == 0.07 and t0["n_obs"] == 0
+
+
+def test_mc_uses_empirical_floor_and_is_reproducible():
+    from wfe.risk.state_machine import simulate_gap_floor_risk
+    bars = [MarketBar(date=f"d{i}", open=25, high=25.5, low=24.5, close=25.0, volume=1e6)
+            for i in range(60)]
+    bars.append(MarketBar(date="crash", open=25.0, high=25.0, low=21.9, close=21.9, volume=2e6))
+    a = simulate_gap_floor_risk(25000, 24000, seed=42, num_simulations=2000, bars=bars)
+    b = simulate_gap_floor_risk(25000, 24000, seed=42, num_simulations=2000, bars=bars)
+    assert a == b, "empirical MC phải reproducible theo seed"
+    assert a["floor_source"].startswith("empirical"), a["floor_source"]
+    assert a["floor_pct_used"] >= 0.12, "floor phải nới theo cú sập -12%"
+    # So với hardcode 7%: p99 NAV phải LỚN HƠN (đuôi rủi ro thật to hơn giả định)
+    hard = simulate_gap_floor_risk(25000, 24000, seed=42, num_simulations=2000,
+                                   floor_pct=0.07, bars=bars)
+    assert a["p99_loss_nav"] >= hard["p99_loss_nav"], (
+        f"empirical p99 {a['p99_loss_nav']} < hardcoded {hard['p99_loss_nav']} — vô lý")
+    # Tương thích ngược: caller cũ truyền floor_pct tường minh vẫn chạy như trước
+    legacy = simulate_gap_floor_risk(25000, 24000, floor_pct=0.07, seed=1)
+    assert legacy["floor_source"] == "explicit" and legacy["floor_pct_used"] == 0.07
