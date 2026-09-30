@@ -1,0 +1,441 @@
+{
+  "meta": {
+    "argv": [
+      "scripts/diagnostic_report.py",
+      "--days",
+      "730"
+    ],
+    "ts": "2026-09-30T13:40:34.768012+00:00",
+    "universe_size": 28,
+    "days": 730
+  },
+  "checks": {
+    "env": {
+      "python": "3.10.12",
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "ok": true,
+      "missing_files": []
+    },
+    "tests": {
+      "ran": false,
+      "passed": 0,
+      "failed": 0,
+      "errors": 0,
+      "failures_detail": [],
+      "tail": "==================================== ERRORS ====================================\n________________ ERROR collecting tests/test_high_rr_scanner.py ________________\nImportError while importing test module '/Volumes/Data/invest/tests/test_high_rr_scanner.py'.\nHint: make sure your test modules/packages have valid Python names.\nTraceback:\n/Users/thando/miniforge3/lib/python3.10/importlib/__init__.py:126: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\ntests/test_high_rr_scanner.py:24: in <module>\n    spec.loader.exec_module(vnstock_server)\nmcp/vnstock_server.py:18: in <module>\n    from mcp.server.fastmcp import FastMCP as MCPServer\n/Users/thando/miniforge3/lib/python3.10/site-packages/mcp/server/fastmcp.py:16: in <module>\n    raise ModuleNotFoundError(_MESSAGE, name=__name__)\nE   ModuleNotFoundError: No module named 'mcp.server.fastmcp'. This is mcp 2.x, where FastMCP was renamed to MCPServer (from mcp.server.mcpserver import MCPServer) and other APIs changed; see the migration guide at https://py.sdk.modelcontextprotocol.io/v2/migration/#fastmcp-renamed-to-mcpserver or pin 'mcp<2' to keep running v1 code.\n=========================== short test summary info ============================\nERROR tests/test_high_rr_scanner.py\n!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 1.04s",
+      "duration_s": 1.3
+    },
+    "s1_determinism": {
+      "in_process_reproducible": true,
+      "cross_process_reproducible": true,
+      "seeds_differ": true,
+      "sample": {
+        "p99_loss_nav": 0.014,
+        "p95_loss_nav": 0.0126,
+        "p_normal": 0.8955,
+        "p_gap": 0.081,
+        "p_floor": 0.0235
+      },
+      "p99_n2000_samples": [
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014
+      ],
+      "p99_n20000_samples": [
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014
+      ],
+      "p99_stability_frac": 1.0
+    },
+    "s2_calibration": {
+      "curve": [
+        {
+          "score": 30,
+          "p": 0.148,
+          "ev_R": -0.5539
+        },
+        {
+          "score": 35,
+          "p": 0.2018,
+          "ev_R": -0.4473
+        },
+        {
+          "score": 40,
+          "p": 0.2689,
+          "ev_R": -0.3466
+        },
+        {
+          "score": 45,
+          "p": 0.3486,
+          "ev_R": -0.2027
+        },
+        {
+          "score": 50,
+          "p": 0.4378,
+          "ev_R": -0.0622
+        },
+        {
+          "score": 55,
+          "p": 0.5312,
+          "ev_R": 0.0562
+        },
+        {
+          "score": 60,
+          "p": 0.6225,
+          "ev_R": 0.2406
+        },
+        {
+          "score": 65,
+          "p": 0.7058,
+          "ev_R": 0.4702
+        },
+        {
+          "score": 70,
+          "p": 0.7773,
+          "ev_R": 0.7205
+        },
+        {
+          "score": 75,
+          "p": 0.8355,
+          "ev_R": 0.9597
+        }
+      ],
+      "ev_at_050": 0.0,
+      "anchor_ok": true,
+      "neutral_score_54": {
+        "p": 0.5124973964842103,
+        "ev": 0.0224953136715786
+      },
+      "monotonic_violations": 0,
+      "fit_check": "a=0.4513 b=-26.3048 p(40)=0.000 p(75)=0.999",
+      "fit_ok": true
+    },
+    "s3_killswitch": {
+      "matrix": {
+        "live": {
+          "classification": "ACTIONABLE",
+          "p_success": 0.926,
+          "ev_r": 1.44,
+          "size_pct": 100.0
+        },
+        "down_rank": {
+          "classification": "ACTIONABLE",
+          "p_success": 0.835,
+          "ev_r": 0.96,
+          "size_pct": 100.0
+        },
+        "off": {
+          "classification": "ACTIONABLE",
+          "p_success": 0.674,
+          "ev_r": 0.38,
+          "size_pct": 21.0
+        }
+      },
+      "delta_live_downrank_p": 0.09100000000000008,
+      "delta_live_off_p": 0.252,
+      "delta_size": 0.0,
+      "effective": true
+    },
+    "s4_hysteresis": {
+      "latched_on": 10,
+      "short_noise_flip": false,
+      "confirmed_flip": true,
+      "pass": true
+    },
+    "s6_walkforward": {
+      "n_splits": 4,
+      "gaps": [
+        5,
+        5,
+        5,
+        5
+      ],
+      "embargo_respected": true
+    },
+    "legacy_bridge": {
+      "import_ok": false,
+      "error": "ModuleNotFoundError: No module named 'mcp.server.fastmcp'. This is mcp 2.x, where FastMCP was renamed to MCPServer (from mcp.server.mcpserver import MCPServer) and other APIs changed; see the migration guide at https://py.sdk.modelcontextprotocol.io/v2/migration/#fastmcp-renamed-to-mcpserver or pin 'mcp<2' to keep runni"
+    },
+    "s5_real_pipeline": {
+      "source": "yahoo-live",
+      "attempted": 28,
+      "loaded": 20,
+      "actionable": 0,
+      "watchlist": 20,
+      "reserve": 0,
+      "rejected": 0,
+      "per_ticker": [
+        {
+          "ticker": "HPG",
+          "classification": "WATCHLIST",
+          "p_success": 0.301,
+          "ev_r": -0.3,
+          "size_pct": 0.0,
+          "setup": null,
+          "regime": "[Normal]",
+          "actions": [
+            "exclude: setup chưa kích hoạt -> sizing 0%, moved to WATCHLIST"
+          ]
+        },
+        {
+          "ticker": "VCB",
+          "classification": "WATCHLIST",
+          "p_success": 0.338,
+          "ev_r": -0.22,
+          "size_pct": 0.0,
+          "setup": null,
+          "regime": "[Normal]",
+          "actions": [
+            "exclude: setup chưa kích hoạt -> sizing 0%, moved to WATCHLIST"
+          ]
+        },
+        {
+          "ticker": "VNM",
+          "classification": "WATCHLIST",
+          "p_success": 0.49,
+          "ev_r": -0.01,
+          "size_pct": 0.0,
+          "setup": "BU_LPS_PHASE_D",
+          "regime": "[Normal]",
+          "actions": [
+            "exclude: EV -0.01R < ngưỡng t1_ev_min 0.15R -> sizing 0%, moved to WATCHLIST"
+          ]
+        },
+        {
+          "ticker": "FPT",
+          "classification": "WATCHLIST",
+          "p_success": 0.358,
+          "ev_r": -0.18,
+          "size_pct": 0.0,
+          "setup": "BU_LPS_PHASE_D",
+          "regime": "[Normal]",
+          "actions": [
+            "exclude: EV -0.18R < ngưỡng t1_ev_min 0.15R -> sizing 0%, moved to WATCHLIST"
+          ]
+        },
+        {
+          "ticker": "SSI",
+          "classification": "WATCHLIST",
+          "p_success": 0.172,
+          "ev_r": -0.51,
+          "size_pct": 0.0,
+          "setup": null,
+          "regime": "[Normal]",
+          "actions": [
+            "exclude: setup chưa kích hoạt -> sizing 0%, moved to WATCHLIST"
+          ]
+        },
+        {
+          "ticker": "HCM",
+          "classification": "WATCHLIST",
+          "p_success": 0.231,
+          "ev_r": -0.4,
+          "size_pct": 0.0,
+          "setup": null,
+          "regime": "[Normal]",
+          "actions": [
+            "exclude: setup chưa kích hoạt -> sizing 0%, moved to WATCHLIST"
+          ]
+        },
+        {
+          "ticker": "VND",
+          "classification": "WATCHLIST",
+          "p_success": 0.202,
+          "ev_r": -0.45,
+          "size_pct": 0.0,
+          "setup": null,
+          "regime": "[Normal]",
+          "actions": [
+            "exclude: setup chưa kích hoạt -> sizing 0%, moved to WATCHLIST"
+          ]
+        },
+        {
+          "ticker": "STB",
+          "classification": "WATCHLIST",
+          "p_success": 0.382,
+          "ev_r": -0.14,
+          "size_pct": 0.0,
+          "setup": "BU_LPS_PHASE_D",
+          "regime": "[Normal]",
+          "actions": [
+            "exclude: EV -0.14R < ngưỡng t1_ev_min 0.15R -> sizing 0%, moved to WATCHLIST"
+          ]
+        },
+        {
+          "ticker": "MBB",
+          "classification": "WATCHLIST",
+          "p_success": 0.348,
+          "ev_r": -0.2,
+          "size_pct": 0.0,
+          "setup": null,
+          "regime": "[Normal]",
+          "actions": [
+            "exclude: setup chưa kích hoạt -> sizing 0%, moved to WATCHLIST"
+          ]
+        },
+        {
+          "ticker": "ACB",
+          "classification": "WATCHLIST",
+          "p_success": 0.0,
+          "ev_r": 0.0,
+          "size_pct": 0.0,
+          "setup": null,
+          "regime": "[Data-Error]",
+          "actions": []
+        },
+        {
+          "ticker": "TPB",
+          "classification": "WATCHLIST",
+          "p_success": 0.0,
+          "ev_r": 0.0,
+          "size_pct": 0.0,
+          "setup": null,
+          "regime": "[Data-Error]",
+          "actions": []
+        },
+        {
+          "ticker": "CTG",
+          "classification": "WATCHLIST",
+          "p_success": 0.241,
+          "ev_r": -0.39,
+          "size_pct": 0.0,
+          "setup": null,
+          "regime": "[Normal]",
+          "actions": [
+            "exclude: setup chưa kích hoạt -> sizing 0%, moved to WATCHLIST"
+          ]
+        },
+        {
+          "ticker": "GVR",
+          "classification": "WATCHLIST",
+          "p_success": 0.523,
+          "ev_r": 0.04,
+          "size_pct": 0.0,
+          "setup": "BU_LPS_PHASE_D",
+          "regime": "[Normal]",
+          "actions": [
+            "flag: [BOX_UNSTABLE] (hộp tích lũy biến động trôi > 5%, hủy bỏ mục tiêu sóng dài)",
+            "exclude: EV +0.04R < ngưỡng t1_ev_min 0.15R -> sizing 0%, moved to WATCHLIST"
+          ]
+        },
+        {
+          "ticker": "VCI",
+          "classification": "WATCHLIST",
+          "p_success": 0.226,
+          "ev_r": -0.41,
+          "size_pct": 0.0,
+          "setup": null,
+          "regime": "[Counter-Trend]",
+          "actions": [
+            "exclude: setup chưa kích hoạt + [Counter-Trend] -> sizing 0%, moved to WATCHLIST"
+          ]
+        },
+        {
+          "ticker": "SHB",
+          "classification": "WATCHLIST",
+          "p_success": 0.301,
+          "ev_r": -0.3,
+          "size_pct": 0.0,
+          "setup": "TEST_SPRING_PHASE_C",
+          "regime": "[Counter-Trend]",
+          "actions": [
+            "exclude: EV -0.30R < ngưỡng t1_ev_min 0.15R + [Counter-Trend] -> sizing 0%, moved to WATCHLIST"
+          ]
+        },
+        {
+          "ticker": "DGC",
+          "classification": "WATCHLIST",
+          "p_success": 0.426,
+          "ev_r": -0.07,
+          "size_pct": 0.0,
+          "setup": "TEST_SPRING_PHASE_C",
+          "regime": "[Counter-Trend]",
+          "actions": [
+            "exclude: EV -0.07R < ngưỡng t1_ev_min 0.15R + [Counter-Trend] -> sizing 0%, moved to WATCHLIST"
+          ]
+        },
+        {
+          "ticker": "PNJ",
+          "classification": "WATCHLIST",
+          "p_success": 0.214,
+          "ev_r": -0.43,
+          "size_pct": 0.0,
+          "setup": null,
+          "regime": "[Counter-Trend]",
+          "actions": [
+            "exclude: setup chưa kích hoạt + [Counter-Trend] -> sizing 0%, moved to WATCHLIST"
+          ]
+        },
+        {
+          "ticker": "REE",
+          "classification": "WATCHLIST",
+          "p_success": 0.246,
+          "ev_r": -0.38,
+          "size_pct": 0.0,
+          "setup": null,
+          "regime": "[Counter-Trend]",
+          "actions": [
+            "exclude: setup chưa kích hoạt + [Counter-Trend] -> sizing 0%, moved to WATCHLIST"
+          ]
+        },
+        {
+          "ticker": "APG",
+          "classification": "WATCHLIST",
+          "p_success": 0.226,
+          "ev_r": -0.41,
+          "size_pct": 0.0,
+          "setup": null,
+          "regime": "[Counter-Trend]",
+          "actions": [
+            "exclude: setup chưa kích hoạt + [Counter-Trend] -> sizing 0%, moved to WATCHLIST"
+          ]
+        },
+        {
+          "ticker": "HHS",
+          "classification": "WATCHLIST",
+          "p_success": 0.271,
+          "ev_r": -0.34,
+          "size_pct": 0.0,
+          "setup": null,
+          "regime": "[Counter-Trend]",
+          "actions": [
+            "flag: [BOX_UNSTABLE] (hộp tích lũy biến động trôi > 5%, hủy bỏ mục tiêu sóng dài)",
+            "exclude: setup chưa kích hoạt + [Counter-Trend] -> sizing 0%, moved to WATCHLIST"
+          ]
+        }
+      ],
+      "empirical": {
+        "gap_down_freq": 0.0425,
+        "floor_freq": 0.0091
+      },
+      "notes": [
+        "cached raw data -> real_data_cache.json"
+      ],
+      "p_dist": {
+        "min": 0.0,
+        "max": 0.523,
+        "mean": 0.2748
+      },
+      "ev_dist": {
+        "min": -0.51,
+        "max": 0.04
+      },
+      "n_actionable_negative_ev": 0
+    }
+  }
+}

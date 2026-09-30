@@ -1,0 +1,172 @@
+
+==============================================================================
+  [0/8] MOI TRUONG & DIEU KIEN TIEN QUYET
+==============================================================================
+  Python   : 3.10.12
+  Platform : Darwin 25.6.0 (arm64)
+  Repo root: /Volumes/Data/invest
+  Time UTC : 2026-09-30T13:40:34.768443+00:00
+  [OK]   Python >= 3.10
+  [OK]   numpy 1.26.4
+  [OK]   pandas 2.3.3
+  [OK]   scipy 1.15.3 (optional)
+  [OK]   pytest 8.2.2 (optional)
+  [OK]   du 8 file cot loi
+  [INFO] Neu pytest bao 'ImportPathNotSetError': set PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+
+==============================================================================
+  [1/8] UNIT TEST SUITE (pytest -q)
+==============================================================================
+  [FAIL] khong parse duoc ket qua pytest — output goc:
+      ==================================== ERRORS ====================================
+      ________________ ERROR collecting tests/test_high_rr_scanner.py ________________
+      ImportError while importing test module '/Volumes/Data/invest/tests/test_high_rr_scanner.py'.
+      Hint: make sure your test modules/packages have valid Python names.
+      Traceback:
+      /Users/thando/miniforge3/lib/python3.10/importlib/__init__.py:126: in import_module
+          return _bootstrap._gcd_import(name[level:], package, level)
+      tests/test_high_rr_scanner.py:24: in <module>
+          spec.loader.exec_module(vnstock_server)
+      mcp/vnstock_server.py:18: in <module>
+          from mcp.server.fastmcp import FastMCP as MCPServer
+      /Users/thando/miniforge3/lib/python3.10/site-packages/mcp/server/fastmcp.py:16: in <module>
+          raise ModuleNotFoundError(_MESSAGE, name=__name__)
+      E   ModuleNotFoundError: No module named 'mcp.server.fastmcp'. This is mcp 2.x, where FastMCP was renamed to MCPServer (from mcp.server.mcpserver import MCPServer) and other APIs changed; see the migration guide at https://py.sdk.modelcontextprotocol.io/v2/migration/#fastmcp-renamed-to-mcpserver or pin 'mcp<2' to keep running v1 code.
+      =========================== short test summary info ============================
+      ERROR tests/test_high_rr_scanner.py
+      !!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+      1 error in 1.04s
+
+==============================================================================
+  [2/8] S1 — MONTE CARLO DETERMINISM (in-proc + cross-proc)
+==============================================================================
+  [ OK ] in-process seed=42 x2 identical: True
+  [ OK ] cross-process seed=42 reproducible: True
+  [ OK ] different seeds differ (full result): True
+  sample(seed=42): {'p99_loss_nav': 0.014, 'p95_loss_nav': 0.0126, 'p_normal': 0.8955, 'p_gap': 0.081, 'p_floor': 0.0235}
+  [INFO] p99 tai n=2000 trung voi n=20000 cung seed: 100% (nho n -> uoc luong p99 NHIEU; spread n=2k 0.0000 vs n=20k 0.0000)
+       => Neu can so lieu dau vao gap/floor on dinh, dung n>=20000 hoac tail-analytic thay vi p99 mau
+  [ OK ] realized freqs sum to 1.0
+
+==============================================================================
+  [3/8] S2 — CALIBRATION (Platt curve / EV monotonicity / anchor)
+==============================================================================
+    score= 30  p=0.1480  EV=-0.554R 
+    score= 35  p=0.2018  EV=-0.447R 
+    score= 40  p=0.2689  EV=-0.347R 
+    score= 45  p=0.3486  EV=-0.203R 
+    score= 50  p=0.4378  EV=-0.062R 
+    score= 55  p=0.5312  EV=+0.056R 
+    score= 60  p=0.6225  EV=+0.241R 
+    score= 65  p=0.7058  EV=+0.470R 
+    score= 70  p=0.7773  EV=+0.721R 
+    score= 75  p=0.8355  EV=+0.960R 
+  [ OK ] EV(0.5)=+0.0000R (can gan 0)
+  score 54 -> p=0.5125, EV=+0.022R <-- trung tinh van CONG EV (phai bi loc tru khi cap von)
+  [ OK ] fit_platt_params tren nhan synthetic: a=0.4513 b=-26.3048 p(40)=0.000 p(75)=0.999
+  monotonicity violations: 0
+
+==============================================================================
+  [4/8] S3 — KILL-SWITCH MATRIX (live/down_rank/off)
+==============================================================================
+    live      : {'classification': 'ACTIONABLE', 'p_success': 0.926, 'ev_r': 1.44, 'size_pct': 100.0}
+    down_rank : {'classification': 'ACTIONABLE', 'p_success': 0.835, 'ev_r': 0.96, 'size_pct': 100.0}
+    off       : {'classification': 'ACTIONABLE', 'p_success': 0.674, 'ev_r': 0.38, 'size_pct': 21.0}
+  [ OK ] delta p live->down_rank=0.0910, size delta=0.00% [CO Y NGHIA]
+      delta p live->off=0.2520
+
+==============================================================================
+  [5/8] S4 — REGIME HYSTERESIS (chong flip-flop)
+==============================================================================
+    last states: ['[Counter-Trend]', '[Counter-Trend]', '[Normal]', '[Normal]', '[Normal]', '[Normal]']
+  [ OK ] latch ON sau giai doan counter-trend dai
+  [ OK ] 2 bar rung < hysteresis_bar(3) KHONG flip: True
+  [ OK ] du >= 3 bar xac nhan thi flip: True
+
+==============================================================================
+  [7/8] S6 — WALK-FORWARD SPLIT INTEGRITY
+==============================================================================
+    n_splits actual = 4 (request 5)
+      train=(0, 200) test=(205, 400) gap=5
+      train=(0, 400) test=(405, 600) gap=5
+      train=(0, 600) test=(605, 800) gap=5
+      train=(0, 800) test=(805, 1000) gap=5
+  [ OK ] gap >= embargo: [5, 5, 5, 5]
+  [WARN] embargo 5 bars << holding period tranche-ladder (vài tuần) -> leakage label tiem an khi backtest that
+
+==============================================================================
+  [8/8] LEGACY BRIDGE — vnstock_server import + classify smoke
+==============================================================================
+  [FAIL] ModuleNotFoundError: No module named 'mcp.server.fastmcp'. This is mcp 2.x, where FastMCP was renamed to MCPServer (from mcp.server.mcpserver import MCPServer) and other APIs changed; see the migration guide at https://py.sdk.modelcontextprotocol.io/v2/migration/#fastmcp-renamed-to-mcpserver or pin 'mcp<2' to keep runni
+
+==============================================================================
+  [6/8] S5 — PIPELINE TREN DU LIEU THAT (HOSE, toi da 28 ma)
+==============================================================================
+    HPG     497 bars  close=20150  gap_down=0.024 floor=0.0081
+    VCB     494 bars  close=58000  gap_down=0.016 floor=0.0061
+    VNM     494 bars  close=59400  gap_down=0.026 floor=0.0020
+    FPT     495 bars  close=63000  gap_down=0.032 floor=0.0081
+    SSI     496 bars  close=20100  gap_down=0.049 floor=0.0101
+    HCM     494 bars  close=23800  gap_down=0.043 floor=0.0142
+    VND     495 bars  close=13850  gap_down=0.053 floor=0.0101
+    STB     495 bars  close=74000  gap_down=0.034 floor=0.0081
+    MBB     496 bars  close=19650  gap_down=0.030 floor=0.0061
+    ACB     496 bars  close=21100  gap_down=0.026 floor=0.0040
+    TPB     496 bars  close=14450  gap_down=0.052 floor=0.0101
+    CTG     496 bars  close=30000  gap_down=0.032 floor=0.0040
+    GVR     495 bars  close=33300  gap_down=0.063 floor=0.0142
+    VCI     497 bars  close=19350  gap_down=0.038 floor=0.0101
+    SHB     497 bars  close=11450  gap_down=0.052 floor=0.0060
+    DGC     494 bars  close=36000  gap_down=0.049 floor=0.0162
+    PNJ     496 bars  close=26600  gap_down=0.075 floor=0.0202
+    REE     496 bars  close=47900  gap_down=0.028 floor=0.0040
+    MKP    download FAIL/<80 bars
+    APG     494 bars  close=4350  gap_down=0.067 floor=0.0101
+    SVI    download FAIL/<80 bars
+    HVT    download FAIL/<80 bars
+    QBS    download FAIL/<80 bars
+    L35    download FAIL/<80 bars
+    SBC    download FAIL/<80 bars
+    VNE    download FAIL/<80 bars
+    HHS     495 bars  close=9300  gap_down=0.059 floor=0.0101
+    KSA    download FAIL/<80 bars
+    -> HPG    WATCHLIST    p=0.301 EV=-0.30R size=0.0% setup=None
+    -> VCB    WATCHLIST    p=0.338 EV=-0.22R size=0.0% setup=None
+    -> VNM    WATCHLIST    p=0.490 EV=-0.01R size=0.0% setup=BU_LPS_PHASE_D
+    -> FPT    WATCHLIST    p=0.358 EV=-0.18R size=0.0% setup=BU_LPS_PHASE_D
+    -> SSI    WATCHLIST    p=0.172 EV=-0.51R size=0.0% setup=None
+    -> HCM    WATCHLIST    p=0.231 EV=-0.40R size=0.0% setup=None
+    -> VND    WATCHLIST    p=0.202 EV=-0.45R size=0.0% setup=None
+    -> STB    WATCHLIST    p=0.382 EV=-0.14R size=0.0% setup=BU_LPS_PHASE_D
+    -> MBB    WATCHLIST    p=0.348 EV=-0.20R size=0.0% setup=None
+    -> ACB    WATCHLIST    p=0.000 EV=+0.00R size=0.0% setup=None
+    -> TPB    WATCHLIST    p=0.000 EV=+0.00R size=0.0% setup=None
+    -> CTG    WATCHLIST    p=0.241 EV=-0.39R size=0.0% setup=None
+    -> GVR    WATCHLIST    p=0.523 EV=+0.04R size=0.0% setup=BU_LPS_PHASE_D
+    -> VCI    WATCHLIST    p=0.226 EV=-0.41R size=0.0% setup=None
+    -> SHB    WATCHLIST    p=0.301 EV=-0.30R size=0.0% setup=TEST_SPRING_PHASE_C
+    -> DGC    WATCHLIST    p=0.426 EV=-0.07R size=0.0% setup=TEST_SPRING_PHASE_C
+    -> PNJ    WATCHLIST    p=0.214 EV=-0.43R size=0.0% setup=None
+    -> REE    WATCHLIST    p=0.246 EV=-0.38R size=0.0% setup=None
+    -> APG    WATCHLIST    p=0.226 EV=-0.41R size=0.0% setup=None
+    -> HHS    WATCHLIST    p=0.271 EV=-0.34R size=0.0% setup=None
+  EMPIRICAL gap-down=0.043 (MC prior 0.08), floor=0.0091 (MC prior 0.02)
+  [ISSUE] prior gap-down lech >0.03 khoi thuc te -> p99 MC sai he so
+  COVERAGE ACTIONABLE: 0/20 | WATCHLIST 20 | RESERVE 0 | REJECT 0
+  p_dist={'min': 0.0, 'max': 0.523, 'mean': 0.2748} ev_dist={'min': -0.51, 'max': 0.04}
+
+==============================================================================
+  TONG HOP DIAGNOSTIC
+==============================================================================
+  [ISSUE] Unit tests 0 failed/0 error
+  [PASS] MC deterministic (in-proc & cross-proc)
+  [PASS] EV(0.5) anchored ~0
+  [PASS] Kill-switch down_rank effective
+  [PASS] Regime hysteresis suppresses flip-flop
+  [PASS] Real-data pipeline ran
+  [PASS] No ACTIONABLE with EV<0
+  Coverage ACTIONABLE tren nguon 'yahoo-live': 0/20 tickers
+
+  => GUI 2 FILE SAU CHO AI PHAN TICH:
+     1. diagnostic_report.txt
+     2. diagnostic_results.json
