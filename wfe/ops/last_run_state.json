@@ -1,80 +1,35 @@
 {
-  "date": "2026-09-22",
+  "date": "2026-10-06",
   "candidates": [
     {
-      "symbol": "PET",
+      "symbol": "PLX",
       "classification": "WATCHLIST",
-      "p_success": 0.688
+      "p_success": 0.506
     },
     {
-      "symbol": "MSB",
+      "symbol": "VIC",
       "classification": "WATCHLIST",
-      "p_success": 0.68
+      "p_success": 0.484
     },
     {
-      "symbol": "NVB",
+      "symbol": "SSI",
       "classification": "WATCHLIST",
-      "p_success": 0.629
-    },
-    {
-      "symbol": "ORS",
-      "classification": "ACTIONABLE",
-      "p_success": 0.607
+      "p_success": 0.478
     },
     {
       "symbol": "TCB",
-      "classification": "ACTIONABLE",
-      "p_success": 0.597
-    },
-    {
-      "symbol": "PVP",
       "classification": "WATCHLIST",
-      "p_success": 0.558
+      "p_success": 0.471
     },
     {
-      "symbol": "SBT",
-      "classification": "ACTIONABLE",
-      "p_success": 0.531
-    },
-    {
-      "symbol": "SSB",
+      "symbol": "MBB",
       "classification": "WATCHLIST",
-      "p_success": 0.527
+      "p_success": 0.467
     },
     {
-      "symbol": "VNM",
-      "classification": "ACTIONABLE",
-      "p_success": 0.51
-    },
-    {
-      "symbol": "VCK",
-      "classification": "ACTIONABLE",
-      "p_success": 0.509
-    },
-    {
-      "symbol": "DGW",
+      "symbol": "PVD",
       "classification": "WATCHLIST",
-      "p_success": 0.504
-    },
-    {
-      "symbol": "DCL",
-      "classification": "WATCHLIST",
-      "p_success": 0.485
-    },
-    {
-      "symbol": "FRT",
-      "classification": "RESERVE",
-      "p_success": 0.485
-    },
-    {
-      "symbol": "SAB",
-      "classification": "RESERVE",
-      "p_success": 0.485
-    },
-    {
-      "symbol": "PVT",
-      "classification": "WATCHLIST",
-      "p_success": 0.478
+      "p_success": 0.46
     }
   ]
 }

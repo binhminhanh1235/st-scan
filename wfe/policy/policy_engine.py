@@ -598,23 +598,22 @@ class PolicyEngine:
             if down_rank:
                 actions.append("downsize: Flow DOWN-RANK haircut 50% (V3.6 C.1)")
 
-            final_size = base_size * regime_mult * ev_mult * ops_mult * downrank_mult
             # Patch V3.6 (C.1) — phân tích đơn vị qua thực đo test:
             #   - base_size là FRACTION NAV; tier4 = 100% NAV, ev_mult high = 1.25 =>
-            #     mọi setup mạnh đều bị clamp trần nuốt haircut (live và down_rank
-            #     cùng chạm trần -> delta size = 0, đúng bug "governance rỗng" mà
-            #     diagnostic máy user đo được).
-            #   - Trần policy engine nay lấy từ registry max_nav_per_stock (25% NAV),
-            #     SÁT với trần scanner enforce (Patch V3.2 P1) thay vì 50% tùy tiện;
-            #     nhờ đó khoảng 0–25% còn trống để haircut của down_rank/off thể hiện
-            #     thành delta size thật.
+            #     mọi setup mạnh đều bị clamp trần nuốt haircut nếu clamp sau cùng
+            #     (live và down_rank cùng chạm trần -> delta size = 0, đúng bug "governance rỗng"
+            #     mà diagnostic máy user đo được).
+            #   - Trần policy engine lấy từ registry max_nav_per_stock (25% NAV).
+            #   - Haircut (ops_mult, downrank_mult) áp dụng trực tiếp lên quy mô đã cap
+            #     để bảo đảm chế độ down_rank / off luôn cắt giảm vốn thực tế.
             stock_cap = getattr(cfg, "max_nav_per_stock", None) or 0.25
-            final_size = round(min(stock_cap, max(0.05, final_size)), 2)
+            raw_pre_haircut = min(stock_cap, max(0.05, base_size * regime_mult * ev_mult))
+            final_size = round(min(stock_cap, max(0.05, raw_pre_haircut * ops_mult * downrank_mult)), 2)
 
             trace.append(
                 f"Sizing: base={base_size*100:.0f}% * regime_haircut={regime_mult:.2f} * "
-                f"ev_mult={ev_mult:.2f} * ops_mult={ops_mult:.2f} * downrank_mult={downrank_mult:.2f}"
-                f" -> raw_size={final_size*100:.0f}%"
+                f"ev_mult={ev_mult:.2f} (capped={raw_pre_haircut*100:.0f}%) * ops_mult={ops_mult:.2f} * "
+                f"downrank_mult={downrank_mult:.2f} -> raw_size={final_size*100:.0f}%"
             )
 
         return PolicyDecision(

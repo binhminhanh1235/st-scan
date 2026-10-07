@@ -182,7 +182,8 @@ class MCDXRadarConfig:
     persist_threshold: float = 25.0           # E2 threshold
     persist_min_bars: int = 3                 # E2 min bars
     persist_window: int = 5                   # E2 window
-    sma5_rvol_min: float = 1.10               # E3
+    sma5_rvol_min: float = 1.10               # E3 standard threshold
+    sma5_rvol_no_supply_min: float = 0.70     # E3 relaxed threshold under tight compression and dried selling
     flow_dist_max_pct: float = 60.0           # E4
     # G1 Flow Turn
     g1_turn_threshold: float = 15.0
@@ -195,7 +196,7 @@ class MCDXRadarConfig:
     g2_flow_accum_min_pct: float = 70.0
     g2_dv_contr_ratio_max: float = 0.75
     g2_obv_div_min: float = 0.15
-    g2_compression_range_max: float = 0.08    # 20-bar range <= 8%
+    g2_compression_range_max: float = 0.12    # 20-bar range <= 12% (phù hợp biên độ VN)
     g_exclude_flow_dist_max_pct: float = 50.0 # distribution bounce exclusion
     # BII Weights
     w_bii_est_trend: float = 0.50

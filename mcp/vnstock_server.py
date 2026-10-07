@@ -12,10 +12,10 @@ import datetime
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
-# NOTE: `mcp.server.mcpserver.MCPServer` never existed in any released version of
-# the `mcp` SDK; the correct import is `mcp.server.fastmcp.FastMCP` (same API:
-# @server.tool(), .run(), etc.). Fixed so the server can actually be imported.
-from mcp.server.fastmcp import FastMCP as MCPServer
+try:
+    from mcp.server.mcpserver import MCPServer
+except ImportError:
+    from mcp.server.fastmcp import FastMCP as MCPServer
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
@@ -1225,7 +1225,7 @@ def scan_mcdx_radar(
     Xếp hạng theo chỉ số Banker Intensity Index (BII 0-100).
     """
     target_universe = [s.upper() for s in symbols] if symbols else get_dynamic_universe()
-    stock_data = _fetch_batch_candles(target_universe, days=120, resolution="1D")
+    stock_data = _fetch_batch_candles(target_universe, days=220, resolution="1D")
 
     radar = MCDXFlowRadar()
     candles_map = {}

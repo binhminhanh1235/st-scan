@@ -1,1 +1,11 @@
-(empty)
+# Git bundles
+*.bundle
+# Local artifacts & caches
+__pycache__/
+*.pyc
+diagnostic_report.txt
+diagnostic_results.json
+scripts/real_data_cache.json
+
+.DS_Store
+**/.DS_Store

@@ -210,7 +210,11 @@ class MCDXFlowRadar:
         tier_thresh = cfg.tier_control_threshold if strength_tier == "control" else cfg.tier_strong_threshold
         e1 = curr_trend >= tier_thresh
         e2 = persist_bars >= cfg.persist_min_bars
-        e3 = sma5_rvol >= cfg.sma5_rvol_min
+
+        # E3: Dual-level check. Normal: sma5_rvol >= 1.10. No Supply context (biên độ nén <= 10% & bán cạn dv_contr <= 0.50): cho phép sma5_rvol >= 0.70
+        is_no_supply_context = (compression_range <= 0.10) and (dv_contr_ratio <= 0.50)
+        e3_thresh = getattr(cfg, "sma5_rvol_no_supply_min", 0.70) if is_no_supply_context else cfg.sma5_rvol_min
+        e3 = sma5_rvol >= e3_thresh
         e4 = (curr_dist <= cfg.flow_dist_max_pct) and (not trend_collapse)
 
         # Limit-day guard: if >= 2/3 of flow_trend increase came from a single limit-day bar in last 5
@@ -227,10 +231,11 @@ class MCDXFlowRadar:
 
         if e1 and e2 and e3 and e4 and (not limit_day_spike):
             is_established = True
+            e3_note = f" (No Supply context: >={e3_thresh:.2f})" if is_no_supply_context else ""
             trace.append(
                 f"ESTABLISHED: E1 (trend={curr_trend:.1f}>={tier_thresh}), "
                 f"E2 (persist={persist_bars}/5>={cfg.persist_min_bars}), "
-                f"E3 (sma5_rvol={sma5_rvol:.2f}>={cfg.sma5_rvol_min}), "
+                f"E3 (sma5_rvol={sma5_rvol:.2f}>={e3_thresh:.2f}{e3_note}), "
                 f"E4 (dist={curr_dist:.1f}<={cfg.flow_dist_max_pct}, collapse={trend_collapse})"
             )
         elif limit_day_spike:
