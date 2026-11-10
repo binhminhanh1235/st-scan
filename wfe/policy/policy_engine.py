@@ -169,53 +169,74 @@ class PolicyEngine:
     def params_hash(self) -> str:
         return self.config.params_hash
 
-    def evaluate_regime(self, bars: List[MarketBar]) -> Tuple[bool, str, List[str]]:
+    def _compute_raw_counter(self, sub_bars: List[MarketBar]) -> Tuple[bool, float, float]:
+        cfg = self.config
+        old_highs = [b.high for b in sub_bars[-cfg.counter_trend_lookback_old:-cfg.counter_trend_lookback_mid]]
+        recent_highs = [b.high for b in sub_bars[-cfg.counter_trend_lookback_mid:-cfg.counter_trend_lookback_recent]]
+
+        peak_old = max(old_highs) if old_highs else 1.0
+        peak_new = max(recent_highs) if recent_highs else 1.0
+        is_counter = peak_old > (peak_new * cfg.counter_trend_peak_ratio)
+
+        old_closes = [b.close for b in sub_bars[-cfg.counter_trend_lookback_old:-cfg.counter_trend_lookback_mid]]
+        recent_closes = [b.close for b in sub_bars[-cfg.counter_trend_lookback_mid:-cfg.counter_trend_lookback_recent]]
+        peak_old_c = max(old_closes) if old_closes else 1.0
+        peak_new_c = max(recent_closes) if recent_closes else 1.0
+        is_counter_close = peak_old_c > (peak_new_c * cfg.counter_trend_peak_ratio)
+
+        return (is_counter or is_counter_close), peak_old, peak_new
+
+    def evaluate_regime(
+        self,
+        bars: List[MarketBar],
+        stateless_rolling: bool = False
+    ) -> Tuple[bool, str, List[str]]:
         """
         Evaluate Counter-Trend Regime:
         max(High[-120:-60]) > max(High[-60:-20]) * 1.05 -> [Counter-Trend]
         Includes close-based fallback and 3-bar hysteresis against noise.
 
-        Patch V3.5: hysteresis is now actually implemented (previously the docstring
-        promised it but `regime_hysteresis_bars` was never referenced). The raw signal
-        must persist for N consecutive evaluations before the latched regime flips.
+        When `stateless_rolling=True` (used by multi-symbol universe scans),
+        hysteresis state is reset per symbol and evaluated across the trailing
+        `regime_hysteresis_bars` windows of the current symbol's bars so state
+        never leaks from symbol N-1 to symbol N.
         """
         cfg = self.config
         trace = []
         n = len(bars)
         if n < cfg.counter_trend_lookback_old:
+            if stateless_rolling:
+                self._raw_counter_streak = 0
+                self._raw_normal_streak = 0
+                self._latched_counter_trend = False
             return False, "[Normal]", ["Regime: insufficient bars for 120-bar lookback, default Normal"]
 
-        old_highs = [b.high for b in bars[-cfg.counter_trend_lookback_old:-cfg.counter_trend_lookback_mid]]
-        recent_highs = [b.high for b in bars[-cfg.counter_trend_lookback_mid:-cfg.counter_trend_lookback_recent]]
-
-        peak_old = max(old_highs) if old_highs else 1.0
-        peak_new = max(recent_highs) if recent_highs else 1.0
-
-        is_counter = peak_old > (peak_new * cfg.counter_trend_peak_ratio)
-
-        # Fallback check on closes if highs are close to boundary
-        old_closes = [b.close for b in bars[-cfg.counter_trend_lookback_old:-cfg.counter_trend_lookback_mid]]
-        recent_closes = [b.close for b in bars[-cfg.counter_trend_lookback_mid:-cfg.counter_trend_lookback_recent]]
-        peak_old_c = max(old_closes) if old_closes else 1.0
-        peak_new_c = max(recent_closes) if recent_closes else 1.0
-        is_counter_close = peak_old_c > (peak_new_c * cfg.counter_trend_peak_ratio)
-
-        raw_counter = is_counter or is_counter_close
-
-        # --- Hysteresis latch (N-bar confirmation both directions) ---
         hyst = max(1, int(cfg.regime_hysteresis_bars))
-        if raw_counter:
-            self._raw_counter_streak += 1
-            self._raw_normal_streak = 0
-        else:
-            self._raw_normal_streak += 1
+
+        if stateless_rolling:
             self._raw_counter_streak = 0
+            self._raw_normal_streak = 0
+            self._latched_counter_trend = False
+            start_end = max(cfg.counter_trend_lookback_old, n - hyst + 1)
+            slices = [bars[:end_idx] for end_idx in range(start_end, n + 1)]
+        else:
+            slices = [bars]
 
         prev_latched = self._latched_counter_trend
-        if not self._latched_counter_trend and self._raw_counter_streak >= hyst:
-            self._latched_counter_trend = True
-        elif self._latched_counter_trend and self._raw_normal_streak >= hyst:
-            self._latched_counter_trend = False
+        raw_counter, peak_old, peak_new = False, 1.0, 1.0
+        for sb in slices:
+            raw_counter, peak_old, peak_new = self._compute_raw_counter(sb)
+            if raw_counter:
+                self._raw_counter_streak += 1
+                self._raw_normal_streak = 0
+            else:
+                self._raw_normal_streak += 1
+                self._raw_counter_streak = 0
+
+            if not self._latched_counter_trend and self._raw_counter_streak >= hyst:
+                self._latched_counter_trend = True
+            elif self._latched_counter_trend and self._raw_normal_streak >= hyst:
+                self._latched_counter_trend = False
 
         final_counter = self._latched_counter_trend
         flag_str = "[Counter-Trend]" if final_counter else "[Normal]"
@@ -236,7 +257,8 @@ class PolicyEngine:
         structure: StructureOutput,
         volume: VolumeOutput,
         kill_switch_flow_off: bool = False,
-        flow_mode: str = "live"
+        flow_mode: str = "live",
+        stateless_rolling_regime: bool = True
     ) -> PolicyDecision:
         cfg = self.config
         p_hash = self.params_hash
@@ -273,7 +295,9 @@ class PolicyEngine:
         curr_price = curr_bar.close
 
         # 1. Regime Detection
-        is_counter_trend, regime_flag, regime_trace = self.evaluate_regime(bars)
+        is_counter_trend, regime_flag, regime_trace = self.evaluate_regime(
+            bars, stateless_rolling=stateless_rolling_regime
+        )
         trace.extend(regime_trace)
 
         # 2. Extract Numerical Features from 3 Engines

@@ -83,6 +83,16 @@ class WFESchemaOutput:
     symbol: str = ""
     date: str = ""
     current_price: float = 0.0
+    action: Optional[str] = None
+    setup_type: Optional[str] = None
+    ev: Optional[float] = None
+    p_success: Optional[float] = None
+    approved_size_pct: float = 0.0
+    operative_sl: Optional[float] = None
+    target_1: Optional[float] = None
+    target_2: Optional[float] = None
+    no_buy_warnings: List[str] = field(default_factory=list)
+    must_sell_triggers: List[str] = field(default_factory=list)
     flow: Optional[FlowBlock] = None
     structure: Optional[StructureBlock] = None
     vpa: Optional[VPABlock] = None
@@ -91,10 +101,12 @@ class WFESchemaOutput:
     actions: List[str] = field(default_factory=list)
     counter_evidence: str = ""
     trace: List[str] = field(default_factory=list)
-    disclaimer: str = STANDARD_DISCLAIMER
+    disclaimer: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        d.pop("disclaimer", None)
+        return d
 
 
 def assemble_wfe_output(
@@ -168,10 +180,47 @@ def assemble_wfe_output(
 
     counter_evidence = " | ".join(counter_ev_points) if counter_ev_points else "Không phát hiện bằng chứng phản bác trọng yếu ở phiên hiện tại."
 
+    operative_sl = None
+    if structure.active_setup == "TEST_SPRING_PHASE_C" and policy.tranche_plans:
+        operative_sl = policy.tranche_plans[0].stop_loss
+    elif structure.active_setup == "BU_LPS_PHASE_D" and len(policy.tranche_plans) > 1:
+        operative_sl = policy.tranche_plans[1].stop_loss
+    elif policy.tranche_plans:
+        operative_sl = policy.tranche_plans[0].stop_loss
+
+    t1_val = getattr(structure.levels, "t1", None)
+    t2_val = getattr(structure.levels, "t2", None)
+
+    no_buy_warnings = list(counter_ev_points)
+    if policy.classification != "ACTIONABLE":
+        no_buy_warnings.append("Setup chưa kích hoạt (WATCHLIST/RESERVE) -> KHÔNG giải ngân sớm trước khi thỏa Pending Trigger.")
+
+    must_sell_triggers = []
+    if operative_sl:
+        must_sell_triggers.append(f"BẮT BUỘC CẮT LỖ 100% nếu giá đóng cửa thủng Operative SL ({operative_sl:.2f}) và không thỏa 5 điều kiện Spring Wash-out Guard.")
+    if t1_val:
+        must_sell_triggers.append(f"CHỐT LỜI 50% tại Target 1 ({t1_val:.2f}) và nâng SL lên max(Entry, min(Low_3D)).")
+    if t2_val and not structure.is_box_unstable:
+        must_sell_triggers.append(f"CHỐT LỜI 100% vị thế còn lại tại Target 2 ({t2_val:.2f}) hoặc khi xuất hiện nến Upthrust/Buying Climax (RSI>72, CP<40%, RVol>=1.5).")
+    if policy.exit_signals and policy.exit_signals.reasons:
+        for r in policy.exit_signals.reasons:
+            if r != "Data invalid":
+                must_sell_triggers.append(f"Tín hiệu thoát lệnh hệ thống: {r}")
+
     return WFESchemaOutput(
         symbol=symbol,
         date=date,
         current_price=current_price,
+        action=policy.classification,
+        setup_type=structure.active_setup,
+        ev=policy.ev_r,
+        p_success=policy.p_success,
+        approved_size_pct=policy.final_size_pct,
+        operative_sl=operative_sl,
+        target_1=t1_val,
+        target_2=t2_val,
+        no_buy_warnings=no_buy_warnings,
+        must_sell_triggers=must_sell_triggers,
         flow=flow_b,
         structure=struct_b,
         vpa=vpa_b,
@@ -180,7 +229,7 @@ def assemble_wfe_output(
         actions=policy.actions,
         counter_evidence=counter_evidence,
         trace=policy.trace,
-        disclaimer=STANDARD_DISCLAIMER
+        disclaimer=""
     )
 
 
@@ -207,10 +256,6 @@ class LLMRuleValidator:
         if output_schema.counter_evidence and output_schema.counter_evidence != "Không phát hiện bằng chứng phản bác trọng yếu ở phiên hiện tại.":
             if "phản bác" not in lower_text and "rủi ro" not in lower_text and "ngược xu hướng" not in lower_text:
                 violations.append("Thiếu dòng bằng chứng phản bác (counter-evidence) khi dữ liệu có cảnh báo rủi ro.")
-
-        # Rule 4: Disclaimer
-        if "heuristic" not in lower_text and "disclaimer" not in lower_text and "lưu ý hệ thống" not in lower_text:
-            violations.append("Thiếu tuyên bố miễn trừ trách nhiệm / disclaimer chuẩn hóa ở cuối văn bản.")
 
         # Rule 5: Target validity check (No T1 <= current_price in actionable text)
         if output_schema.structure and output_schema.structure.levels.get("t1"):
