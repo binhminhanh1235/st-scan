@@ -39,17 +39,23 @@ Write-Host "[✓] Đã sao chép vnstock_server.py vào: $targetMcpDir" -Foregro
 
 # 4. Sao chép Skills
 $targetSkillsDir = "$HOME\.gemini\config\skills"
+$targetAgentsSkillsDir = "$HOME\.agents\skills"
 if (-not (Test-Path $targetSkillsDir)) {
     New-Item -ItemType Directory -Path $targetSkillsDir -Force | Out-Null
 }
+if (-not (Test-Path $targetAgentsSkillsDir)) {
+    New-Item -ItemType Directory -Path $targetAgentsSkillsDir -Force | Out-Null
+}
 Copy-Item -Recurse "$scriptDir\skills\*" "$targetSkillsDir\" -Force
-Write-Host "[✓] Đã cài đặt 4 Skills (tcbs-wyckoff-vpa, market-leader-scanner, high-rr-setup-scanner, wyckoff-phase-cd-screener) vào: $targetSkillsDir" -ForegroundColor Green
+Copy-Item -Recurse "$scriptDir\skills\*" "$targetAgentsSkillsDir\" -Force
+Write-Host "[✓] Đã cài đặt Skills (invest-market-scanner, invest-stock-portfolio-advisor) vào: $targetSkillsDir và $targetAgentsSkillsDir" -ForegroundColor Green
 
 # 5. Cấu hình mcp_config.json cho Antigravity
 Write-Host "`n[3/4] Cấu hình mcp_config.json cho Antigravity..." -ForegroundColor Cyan
 $antigravityConfig = "$HOME\.gemini\config\mcp_config.json"
 $serverScript = "$targetMcpDir\vnstock_server.py".Replace('\', '\\')
 $pythonEscaped = $pythonPath.Replace('\', '\\')
+$scriptDirEscaped = $scriptDir.Replace('\', '\\')
 
 $updateScript = @"
 import json, os
@@ -70,7 +76,10 @@ if 'mcpServers' not in data or not isinstance(data['mcpServers'], dict):
 
 data['mcpServers']['vnstock'] = {
     'command': r'$pythonEscaped',
-    'args': [r'$serverScript']
+    'args': [r'$serverScript'],
+    'env': {
+        'VNSTOCK_EXTRA_PATH': r'$scriptDirEscaped'
+    }
 }
 
 with open(config_path, 'w', encoding='utf-8') as f:
@@ -104,7 +113,10 @@ if 'mcpServers' not in data or not isinstance(data['mcpServers'], dict):
 
 data['mcpServers']['vnstock'] = {
     'command': r'$pythonEscaped',
-    'args': [r'$serverScript']
+    'args': [r'$serverScript'],
+    'env': {
+        'VNSTOCK_EXTRA_PATH': r'$scriptDirEscaped'
+    }
 }
 
 with open(config_path, 'w', encoding='utf-8') as f:
@@ -119,8 +131,7 @@ print('    Đã cập nhật Claude config:', config_path)
 Write-Host "`n======================================================" -ForegroundColor Green
 Write-Host "             CÀI ĐẶT HOÀN TẤT THÀNH CÔNG!             " -ForegroundColor Green
 Write-Host "======================================================" -ForegroundColor Green
-Write-Host "Mở Antigravity và sử dụng ngay:"
-Write-Host "  1. /tcbs-wyckoff-vpa HPG" -ForegroundColor Yellow
-Write-Host "  2. /market-leader-scanner" -ForegroundColor Yellow
-Write-Host "  3. /high-rr-setup-scanner" -ForegroundColor Yellow
+Write-Host "Mở Antigravity và sử dụng ngay các Skills:"
+Write-Host "  1. invest-market-scanner            -> Quét toàn diện thị trường (WFE C/D, High R:R, MCDX, Leaders)" -ForegroundColor Yellow
+Write-Host "  2. invest-stock-portfolio-advisor   -> Phân tích Wyckoff/VPA từng mã & Quản trị Danh mục / Chốt lời / Cắt lỗ" -ForegroundColor Yellow
 Write-Host ""
