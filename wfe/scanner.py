@@ -151,10 +151,16 @@ class WFEScanner:
                 sl=sl1,
                 nav_allocation_pct=policy_res.final_size_pct / 100.0,
                 num_simulations=2000,
-                seed=risk_seed
+                seed=risk_seed,
+                bars=bars,  # Patch V3.6 (C.2): empirical floor tail từ lịch sử PIT của chính mã
             )
             p99_loss_nav = gap_sim["p99_loss_nav"]
             max_risk = self.registry.risk.max_total_risk_p99_nav
+            if gap_sim.get("floor_source", "").startswith("empirical"):
+                policy_res.trace.append(
+                    f"Risk MC floor: empirical {gap_sim['floor_pct_used']*100:.2f}% "
+                    f"[{gap_sim['floor_source']}] (prior hardcode 7.00% đã bị dữ liệu HOSE bác bỏ)"
+                )
             if p99_loss_nav > max_risk:
                 old_size = policy_res.final_size_pct
                 scale = max_risk / p99_loss_nav
@@ -191,7 +197,8 @@ class WFEScanner:
                 sl=sl1,
                 nav_allocation_pct=policy_res.final_size_pct / 100.0,
                 num_simulations=2000,
-                seed=risk_seed
+                seed=risk_seed,
+                bars=bars,
             )
             p99_loss_nav = gap_sim["p99_loss_nav"]
 
@@ -298,8 +305,10 @@ class WFEScanner:
                 new_s = round(curr_s - reduction, 1)
                 excess -= reduction
                 c.policy.size_pct = new_s
+                c.approved_size_pct = new_s
                 if new_s <= 0.0:
                     c.classification = "RESERVE"
+                    c.action = "RESERVE"
                     c.policy.classification = "RESERVE"
                     c.actions.append(f"downsize: portfolio_budget_cap ({curr_s}% -> 0.0%) -> moved to RESERVE (hết hạn mức danh mục {budget_pct:.0f}% NAV)")
                     c.trace.append(f"Portfolio Budget Cap: reduced from {curr_s}% to 0.0% -> Reclassified as RESERVE")
@@ -322,15 +331,21 @@ class WFEScanner:
             except Exception:
                 prev_state = {}
 
+        current_scope = sorted(candles_by_symbol.keys())
         current_active_syms = set([c.symbol for c in top_candidates])
         drop_out_manifest = []
 
-        if prev_state and "candidates" in prev_state:
+        prev_scope = prev_state.get("symbol_scope") if prev_state else None
+        same_scope = (prev_scope == current_scope) or (
+            prev_scope is None and len(current_scope) >= 15
+        )
+
+        if prev_state and "candidates" in prev_state and same_scope:
             prev_candidates = prev_state["candidates"]
             top_cut_off = top_candidates[-1].policy.p_success if len(top_candidates) >= top_n else min_p_success
             for prev_c in prev_candidates:
                 sym = prev_c.get("symbol")
-                if not sym or sym in current_active_syms:
+                if not sym or sym in current_active_syms or sym not in candles_by_symbol:
                     continue
                 prev_status = prev_c.get("classification", "N/A")
                 if sym not in all_results_by_sym:
@@ -360,20 +375,22 @@ class WFEScanner:
                     "category": cat
                 })
 
-        # Persist current candidates for subsequent run diff
-        current_state = {
-            "date": top_candidates[0].date if top_candidates else "N/A",
-            "candidates": [
-                {"symbol": c.symbol, "classification": c.classification, "p_success": c.policy.p_success}
-                for c in results[:max(top_n, 15)]
-            ]
-        }
-        try:
-            os.makedirs(os.path.dirname(state_file), exist_ok=True)
-            with open(state_file, "w", encoding="utf-8") as f:
-                json.dump(current_state, f, indent=2, ensure_ascii=False)
-        except Exception:
-            pass
+        # Persist current candidates for subsequent run diff (only overwrite global state on broad scans or same scope)
+        if len(current_scope) >= 15 or prev_scope == current_scope or not prev_state:
+            current_state = {
+                "date": top_candidates[0].date if top_candidates else "N/A",
+                "symbol_scope": current_scope,
+                "candidates": [
+                    {"symbol": c.symbol, "classification": c.classification, "p_success": c.policy.p_success}
+                    for c in results[:max(top_n, 15)]
+                ]
+            }
+            try:
+                os.makedirs(os.path.dirname(state_file), exist_ok=True)
+                with open(state_file, "w", encoding="utf-8") as f:
+                    json.dump(current_state, f, indent=2, ensure_ascii=False)
+            except Exception:
+                pass
 
         return {
             "total_scanned": len(candles_by_symbol),

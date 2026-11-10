@@ -51,6 +51,19 @@ def test_established_pass_e1_to_e4():
     assert any("ESTABLISHED:" in tr for tr in cand.trace)
 
 
+def test_established_passes_no_supply_context():
+    """Verify stock with flow_trend >= 50, persist >= 3, low volume (RVol < 1.10 but >= 0.70) passes under tight compression and dried down-vol."""
+    radar = MCDXFlowRadar()
+    # 85 bars of tight range uptrend
+    bars = make_test_bars(n=85, base_price=40.0, step=0.05, vol=400000.0)
+    for b in bars[-5:]:
+        b.volume = 300000.0  # RVol ~ 0.75-0.80 < 1.10
+    cand = radar.evaluate_symbol("NO_SUPPLY_STOCK", bars, adtv20_bil=35.0, mode="established")
+    assert cand is not None, "Candidate should pass ESTABLISHED under No Supply context"
+    assert cand.mode_tag in ("ESTABLISHED", "BOTH")
+    assert any("No Supply context" in tr for tr in cand.trace)
+
+
 def test_established_fails_single_bar_spike():
     """Verify single-bar volume/price spike fails E2 (persistence requirement)."""
     radar = MCDXFlowRadar()

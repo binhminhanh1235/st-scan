@@ -71,4 +71,6 @@ def test_realized_frequencies_match_prior():
 def test_invalid_inputs_return_zero_dict():
     sim = simulate_gap_floor_risk(entry_price=50.0, sl=55.0)
     assert sim["p99_loss_nav"] == 0.0
-    assert set(sim.keys()) == {"p99_loss_nav", "p95_loss_nav", "p_normal", "p_gap", "p_floor"}
+    # Patch V3.6: dict mở thêm floor_pct_used/floor_source (audit trace)
+    assert set(sim.keys()) == {"p99_loss_nav", "p95_loss_nav", "p_normal", "p_gap",
+                               "p_floor", "floor_pct_used", "floor_source"}

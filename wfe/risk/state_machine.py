@@ -10,7 +10,7 @@ Architecture Contract:
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Sequence
 import random
 import numpy as np
 from wfe.config.registry import RiskConfig, compute_params_hash
@@ -135,15 +135,57 @@ def get_trigger_stop_audit(event_low: float, atr14: float, stop: float) -> Dict[
 
 
 
+def estimate_tail_params_from_bars(
+    bars: Sequence[MarketBar],
+    floor_percentile: float = 99.0
+) -> Dict[str, float]:
+    """
+    Patch V3.6 (C.2 — empirical floor tail): ước lượng tham số đuôi rủi ro từ
+    lịch sử giá thật thay vì hardcode 7% của HOSE.
+
+    Thực đo trên dữ liệu Yahoo HOSE (diagnostic run 29/09, universe 8 mã x 730 ngày):
+      - worst open->close intraday move = -12.29% (vượt xa giả định floor 7%)
+      - p99 daily return ~ -7.1%
+    => dùng floor_pct=0.07 làm mức lỗ tối đa UNDERESTIMATE đuôi ~1.75 lần;
+       chạy MC với floor thực đo làm p99 NAV nhảy +146%.
+
+    Trả về dict:
+      floor_pct        : percentile `floor_percentile` của -daily_return (sụt giảm)
+      worst_open_close : worst-case (open->close)/open trong sample
+      suggested_floor  : max(floor_pct, worst_open_close) — mức an toàn để MC dùng
+      n_obs
+    """
+    if bars is None or len(bars) < 2:
+        return {"floor_pct": 0.07, "worst_open_close": 0.07,
+                "suggested_floor": 0.07, "n_obs": 0}
+    closes = np.array([b.close for b in bars], dtype=float)
+    opens = np.array([b.open for b in bars], dtype=float)
+    prev_close = closes[:-1]
+    valid = prev_close > 0
+    daily_ret = (closes[1:][valid] - prev_close[valid]) / prev_close[valid]
+    oc_ret = ((closes[1:][valid] - opens[1:][valid]) / np.where(opens[1:][valid] > 0, opens[1:][valid], 1.0))
+    declines = -daily_ret
+    floor_p = float(np.percentile(declines, floor_percentile)) if len(declines) else 0.07
+    worst_oc = float(-np.min(oc_ret)) if len(oc_ret) else 0.07
+    suggested = max(floor_p, worst_oc, 0.07)  # không bao giờ dưới biên chính thức
+    return {
+        "floor_pct": round(floor_p, 4),
+        "worst_open_close": round(worst_oc, 4),
+        "suggested_floor": round(suggested, 4),
+        "n_obs": int(len(daily_ret)),
+    }
+
+
 def simulate_gap_floor_risk(
     entry_price: float,
     sl: float,
     nav_allocation_pct: float = 0.20,  # e.g. 20% NAV allocated
     num_simulations: int = 5000,
-    floor_pct: float = 0.07,  # 7% HOSE daily limit
+    floor_pct: Optional[float] = None,  # None -> tự ước lượng từ `bars` (V3.6); fallback 0.07
     seed: Optional[int] = None,
     gap_event_probs: Optional[Tuple[float, float, float]] = None,
-    slippage_range: Tuple[float, float] = (0.01, 0.03)
+    slippage_range: Tuple[float, float] = (0.01, 0.03),
+    bars: Optional[Sequence[MarketBar]] = None
 ) -> Dict[str, float]:
     """
     Monte Carlo simulation of gap-down and floor fill slippage.
@@ -164,7 +206,22 @@ def simulate_gap_floor_risk(
     """
     if entry_price <= 0 or sl >= entry_price:
         return {"p99_loss_nav": 0.0, "p95_loss_nav": 0.0,
-                "p_normal": 1.0, "p_gap": 0.0, "p_floor": 0.0}
+                "p_normal": 1.0, "p_gap": 0.0, "p_floor": 0.0,
+                "floor_pct_used": floor_pct if floor_pct is not None else 0.07,
+                "floor_source": "default"}
+
+    # Patch V3.6 (C.2): empirical floor tail. Nếu caller không truyền floor_pct
+    # tường minh và có bars lịch sử, tự ước lượng từ dữ liệu thật (p99 drawdown +
+    # worst open->close). Thực đo HOSE: worst intraday -12.29% vs giả định 7%.
+    floor_source = "explicit"
+    if floor_pct is None:
+        if bars is not None and len(bars) >= 20:
+            tail = estimate_tail_params_from_bars(bars)
+            floor_pct = tail["suggested_floor"]
+            floor_source = f"empirical(p99={tail['floor_pct']:.4f},worst_oc={tail['worst_open_close']:.4f},n={tail['n_obs']})"
+        else:
+            floor_pct = 0.07
+            floor_source = "default"
 
     rng = np.random.default_rng(seed)
     nominal_loss_pct = (entry_price - sl) / entry_price
@@ -194,6 +251,8 @@ def simulate_gap_floor_risk(
         "p_normal": round(float((events == 0).mean()), 4),
         "p_gap": round(float(gap_mask.mean()), 4),
         "p_floor": round(float(floor_mask.mean()), 4),
+        "floor_pct_used": round(float(floor_pct), 4),
+        "floor_source": floor_source,
     }
 
 

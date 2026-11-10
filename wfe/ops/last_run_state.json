@@ -1,80 +1,155 @@
 {
-  "date": "2026-09-22",
+  "date": "2026-11-10",
   "candidates": [
     {
-      "symbol": "PET",
-      "classification": "WATCHLIST",
-      "p_success": 0.688
-    },
-    {
-      "symbol": "MSB",
-      "classification": "WATCHLIST",
-      "p_success": 0.68
-    },
-    {
-      "symbol": "NVB",
-      "classification": "WATCHLIST",
-      "p_success": 0.629
-    },
-    {
-      "symbol": "ORS",
-      "classification": "ACTIONABLE",
-      "p_success": 0.607
-    },
-    {
-      "symbol": "TCB",
-      "classification": "ACTIONABLE",
-      "p_success": 0.597
-    },
-    {
-      "symbol": "PVP",
+      "symbol": "TVS",
       "classification": "WATCHLIST",
       "p_success": 0.558
     },
     {
-      "symbol": "SBT",
-      "classification": "ACTIONABLE",
-      "p_success": 0.531
-    },
-    {
-      "symbol": "SSB",
+      "symbol": "QCG",
       "classification": "WATCHLIST",
-      "p_success": 0.527
+      "p_success": 0.525
     },
     {
-      "symbol": "VNM",
-      "classification": "ACTIONABLE",
-      "p_success": 0.51
-    },
-    {
-      "symbol": "VCK",
-      "classification": "ACTIONABLE",
-      "p_success": 0.509
-    },
-    {
-      "symbol": "DGW",
+      "symbol": "WSS",
       "classification": "WATCHLIST",
-      "p_success": 0.504
+      "p_success": 0.519
     },
     {
-      "symbol": "DCL",
+      "symbol": "TCI",
       "classification": "WATCHLIST",
-      "p_success": 0.485
+      "p_success": 0.516
     },
     {
-      "symbol": "FRT",
-      "classification": "RESERVE",
-      "p_success": 0.485
-    },
-    {
-      "symbol": "SAB",
-      "classification": "RESERVE",
-      "p_success": 0.485
-    },
-    {
-      "symbol": "PVT",
+      "symbol": "NRC",
       "classification": "WATCHLIST",
-      "p_success": 0.478
+      "p_success": 0.497
+    },
+    {
+      "symbol": "HDG",
+      "classification": "WATCHLIST",
+      "p_success": 0.489
+    },
+    {
+      "symbol": "IDC",
+      "classification": "WATCHLIST",
+      "p_success": 0.48
+    },
+    {
+      "symbol": "DXG",
+      "classification": "WATCHLIST",
+      "p_success": 0.463
+    },
+    {
+      "symbol": "DIG",
+      "classification": "WATCHLIST",
+      "p_success": 0.461
+    },
+    {
+      "symbol": "ORS",
+      "classification": "WATCHLIST",
+      "p_success": 0.456
+    },
+    {
+      "symbol": "EVS",
+      "classification": "WATCHLIST",
+      "p_success": 0.451
+    },
+    {
+      "symbol": "VRE",
+      "classification": "WATCHLIST",
+      "p_success": 0.445
+    },
+    {
+      "symbol": "NLG",
+      "classification": "WATCHLIST",
+      "p_success": 0.44
+    },
+    {
+      "symbol": "SZC",
+      "classification": "WATCHLIST",
+      "p_success": 0.43
+    },
+    {
+      "symbol": "VIC",
+      "classification": "WATCHLIST",
+      "p_success": 0.43
+    },
+    {
+      "symbol": "TCH",
+      "classification": "WATCHLIST",
+      "p_success": 0.426
+    },
+    {
+      "symbol": "SSI",
+      "classification": "WATCHLIST",
+      "p_success": 0.42
+    },
+    {
+      "symbol": "LDG",
+      "classification": "WATCHLIST",
+      "p_success": 0.415
+    },
+    {
+      "symbol": "NBB",
+      "classification": "WATCHLIST",
+      "p_success": 0.414
+    },
+    {
+      "symbol": "DPG",
+      "classification": "WATCHLIST",
+      "p_success": 0.399
+    },
+    {
+      "symbol": "NHA",
+      "classification": "WATCHLIST",
+      "p_success": 0.397
+    },
+    {
+      "symbol": "NTL",
+      "classification": "WATCHLIST",
+      "p_success": 0.397
+    },
+    {
+      "symbol": "SCR",
+      "classification": "WATCHLIST",
+      "p_success": 0.379
+    },
+    {
+      "symbol": "IVS",
+      "classification": "WATCHLIST",
+      "p_success": 0.374
+    },
+    {
+      "symbol": "KHG",
+      "classification": "WATCHLIST",
+      "p_success": 0.372
+    },
+    {
+      "symbol": "NVL",
+      "classification": "WATCHLIST",
+      "p_success": 0.369
+    },
+    {
+      "symbol": "HCM",
+      "classification": "WATCHLIST",
+      "p_success": 0.369
+    },
+    {
+      "symbol": "AGG",
+      "classification": "WATCHLIST",
+      "p_success": 0.361
+    },
+    {
+      "symbol": "SJS",
+      "classification": "WATCHLIST",
+      "p_success": 0.342
+    },
+    {
+      "symbol": "IJC",
+      "classification": "WATCHLIST",
+      "p_success": 0.338
     }
   ]
 }
